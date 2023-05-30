@@ -11,9 +11,12 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
+	"github.com/gtuk/discordwebhook"
 )
 
 const (
+	discordWebhookUsername = "ncdmv-bot"
+
 	makeApptUrl                   = "https://skiptheline.ncdot.gov/"
 	makeApptButtonSelector        = "button#cmdMakeAppt"
 	locationAvailableClassName    = "Active-Unit"
@@ -31,10 +34,13 @@ func isLocationNodeEnabled(node *cdp.Node) bool {
 
 type Client struct {
 	// chromedp browser context.
-	ctx context.Context
+	ctx                      context.Context
+	discordWebhook           string
+	stopOnFailure            bool
+	appointmentNotifications map[*Appointment]bool
 }
 
-func NewClient(ctx context.Context, headless, debug bool) (*Client, context.CancelFunc, error) {
+func NewClient(ctx context.Context, discordWebhook string, headless, debug, stopOnFailure bool) (*Client, context.CancelFunc, error) {
 	allocatorOpts := chromedp.DefaultExecAllocatorOptions[:]
 	var ctxOpts []chromedp.ContextOption
 	if !headless {
@@ -54,7 +60,12 @@ func NewClient(ctx context.Context, headless, debug bool) (*Client, context.Canc
 		return nil, nil, fmt.Errorf("failed to open first tab: %w", err)
 	}
 
-	return &Client{ctx}, cancel, nil
+	return &Client{
+		ctx:                      ctx,
+		discordWebhook:           discordWebhook,
+		stopOnFailure:            stopOnFailure,
+		appointmentNotifications: make(map[*Appointment]bool),
+	}, cancel, nil
 }
 
 func isLocationAvailable(ctx context.Context, apptType AppointmentType, location Location, timeout time.Duration) (bool, error) {
@@ -194,10 +205,10 @@ func findAvailableAppointments(ctx context.Context, apptType AppointmentType, lo
 	return appointments, nil
 }
 
-// CheckLocations finds all available appointments across the given locations.
+// RunForLocations finds all available appointments across the given locations.
 //
 // NOTE: For now, this only looks at _appointment dates_ and only considers the first available month.
-func (c Client) CheckLocations(apptType AppointmentType, locations []Location, timeout time.Duration) ([]*Appointment, error) {
+func (c Client) RunForLocations(apptType AppointmentType, locations []Location, timeout time.Duration) ([]*Appointment, error) {
 	// Common timeout for all locations.
 	ctx, cancel := context.WithTimeout(c.ctx, timeout)
 	defer cancel()
@@ -250,4 +261,45 @@ func (c Client) CheckLocations(apptType AppointmentType, locations []Location, t
 	}
 
 	return appointments, nil
+}
+
+// Start runs the NC DMV client for the given locations. A search will be run for all locations based on
+// the specified interval.
+//
+// Note that this method will block indefinitely. If you want to just run a single search, use RunForLocations.
+//
+// If "stopOnFailure" is true for this client, this method will return any error encountered.
+func (c Client) Start(apptType AppointmentType, locations []Location, timeout, interval time.Duration) error {
+	appointments, err := c.RunForLocations(apptType, locations, timeout)
+	if err != nil {
+		if c.stopOnFailure {
+			return fmt.Errorf("failed to check locations: %w", err)
+		} else {
+			log.Printf("Failed to check locations: %v", err)
+		}
+	}
+
+	for _, appointment := range appointments {
+		log.Printf("Found appointment: %q", appointment)
+
+		// Send a notification for this appointment if we haven't already done so.
+		if !c.appointmentNotifications[appointment] {
+			if c.discordWebhook != "" {
+				username := discordWebhookUsername
+				content := fmt.Sprintf("Found appointment: %q", appointment)
+				if err := discordwebhook.SendMessage(c.discordWebhook, discordwebhook.Message{
+					Username: &username,
+					Content:  &content,
+				}); err != nil {
+					log.Printf("Failed to send message to Discord webhook %q: %v", c.discordWebhook, err)
+				}
+			}
+			c.appointmentNotifications[appointment] = true
+		}
+
+		log.Printf("Sleeping for %v between checks...", interval)
+		time.Sleep(interval)
+	}
+
+	return nil
 }

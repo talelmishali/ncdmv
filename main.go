@@ -9,7 +9,6 @@ import (
 	"time"
 
 	ncdmv "github.com/aksiksi/ncdmv/pkg/lib"
-	"github.com/gtuk/discordwebhook"
 )
 
 const (
@@ -53,46 +52,16 @@ func main() {
 		parsedLocations = append(parsedLocations, parsedLocation)
 	}
 
-	client, cancel, err := ncdmv.NewClient(ctx, *headless, *debug)
+	client, cancel, err := ncdmv.NewClient(ctx, *discordWebhook, *headless, *debug, *stopOnFailure)
 	if err != nil {
 		log.Fatalf("failed to create client: %v", err)
 	}
 	defer cancel()
 
-	// Keep track of which appointments we've sent notifications for already.
-	appointmentNotifications := make(map[*ncdmv.Appointment]bool)
+	parsedTimeout := time.Duration(*timeout) * time.Second
+	parsedInterval := time.Duration(*interval) * time.Minute
 
-	for {
-		appointments, err := client.CheckLocations(parsedApptType, parsedLocations, time.Duration(*timeout)*time.Second)
-		if err != nil {
-			if *stopOnFailure {
-				log.Fatalf("Failed to check all locations: %v", err)
-			} else {
-				log.Printf("Failed to check all locations: %v", err)
-			}
-		}
-
-		for _, appointment := range appointments {
-			log.Printf("Found appointment: %q", appointment)
-
-			// Send a notification for this appointment if we haven't already done so.
-			if !appointmentNotifications[appointment] {
-				if *discordWebhook != "" {
-					username := discordWebhookUsername
-					content := fmt.Sprintf("Found appointment: %q", appointment)
-					if err := discordwebhook.SendMessage(*discordWebhook, discordwebhook.Message{
-						Username: &username,
-						Content:  &content,
-					}); err != nil {
-						log.Printf("Failed to send message to Discord webhook %q: %v", *discordWebhook, err)
-					}
-				}
-				appointmentNotifications[appointment] = true
-			}
-		}
-
-		interval := time.Duration(*interval) * time.Minute
-		log.Printf("Sleeping for %v between checks...", interval)
-		time.Sleep(interval)
+	if err := client.Start(parsedApptType, parsedLocations, parsedTimeout, parsedInterval); err != nil {
+		log.Fatal(err)
 	}
 }
