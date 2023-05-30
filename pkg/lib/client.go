@@ -4,19 +4,27 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
 )
 
 const (
-	apptUrl                    = "https://skiptheline.ncdot.gov/"
-	makeApptButtonSel          = "button#cmdMakeAppt"
-	locationAvailableClassName = "Active-Unit"
+	makeApptUrl                   = "https://skiptheline.ncdot.gov/"
+	makeApptButtonSelector        = "button#cmdMakeAppt"
+	locationAvailableClassName    = "Active-Unit"
+	appointmentCalendarSelector   = "div.CalendarDateModel.hasDatepicker"
+	appointmentDayButtonSelector  = `td[data-handler="selectDay"]`
+	appointmentMonthAttributeName = "data-month"
+	appointmentYearAttributeName  = "data-year"
+	appointmentTimeSelectSelector = "div.AppointmentTime select"
 )
 
+// isLocationNodeEnabled returns "true" if the location DOM node is available/clickable.
 func isLocationNodeEnabled(node *cdp.Node) bool {
 	return strings.Contains(node.AttributeValue("class"), locationAvailableClassName)
 }
@@ -38,7 +46,6 @@ func NewClient(ctx context.Context, headless, debug bool) (*Client, context.Canc
 
 	ctx, cancel1 := chromedp.NewExecAllocator(ctx, allocatorOpts...)
 	ctx, cancel2 := chromedp.NewContext(ctx, ctxOpts...)
-
 	cancel := func() { cancel2(); cancel1() }
 
 	// Open the first (empty) tab.
@@ -52,16 +59,16 @@ func NewClient(ctx context.Context, headless, debug bool) (*Client, context.Canc
 
 func isLocationAvailable(ctx context.Context, apptType AppointmentType, location Location, timeout time.Duration) (bool, error) {
 	// Navigate to the main page.
-	if _, err := chromedp.RunResponse(ctx, chromedp.Navigate(apptUrl)); err != nil {
+	if _, err := chromedp.RunResponse(ctx, chromedp.Navigate(makeApptUrl)); err != nil {
 		return false, err
 	}
 
 	// Click the "Make Appointment" button once it is visible.
-	if _, err := chromedp.RunResponse(ctx, chromedp.Click(makeApptButtonSel, chromedp.NodeVisible, chromedp.ByQuery)); err != nil {
+	if _, err := chromedp.RunResponse(ctx, chromedp.Click(makeApptButtonSelector, chromedp.NodeVisible, chromedp.ByQuery)); err != nil {
 		return false, err
 	}
 
-	// Click the appointment type.
+	// Click the appointment type button.
 	if _, err := chromedp.RunResponse(ctx, chromedp.Click(apptType.ToSelector(), chromedp.NodeVisible, chromedp.ByQuery)); err != nil {
 		return false, err
 	}
@@ -69,22 +76,11 @@ func isLocationAvailable(ctx context.Context, apptType AppointmentType, location
 	// Wait for the location and read the node.
 	var nodes []*cdp.Node
 	if err := chromedp.Run(ctx,
-		//browser.GrantPermissions([]browser.PermissionType{browser.PermissionTypeGeolocation}).WithOrigin(apptUrl),
 		chromedp.WaitVisible(location.ToSelector(), chromedp.ByQuery),
 		chromedp.Nodes(location.ToSelector(), &nodes, chromedp.NodeVisible, chromedp.ByQuery),
 	); err != nil {
 		return false, err
 	}
-
-	// if screenshotPath != "" {
-	// 	var screenshotBuf []byte
-	// 	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&screenshotBuf, 90)); err != nil {
-	// 		return false, err
-	// 	}
-	// 	if err := os.WriteFile(screenshotPath, screenshotBuf, 0o644); err != nil {
-	// 		return false, fmt.Errorf("failed to write screenshot to path %q: %w", screenshotPath, err)
-	// 	}
-	// }
 
 	if len(nodes) == 0 {
 		return false, fmt.Errorf("found no nodes for location %q - is it even valid?", location)
@@ -92,17 +88,122 @@ func isLocationAvailable(ctx context.Context, apptType AppointmentType, location
 		return false, fmt.Errorf("found multiple nodes for location %q: %+v", location, nodes)
 	}
 
-	isAvailable := isLocationNodeEnabled(nodes[0])
-
-	return isAvailable, nil
+	return isLocationNodeEnabled(nodes[0]), nil
 }
 
-func (c Client) CheckLocations(apptType AppointmentType, locations []Location, timeout time.Duration) (*Location, error) {
-	// Timeout for all locations.
+type Appointment struct {
+	Location Location
+	Time     time.Time
+}
+
+func (a Appointment) String() string {
+	return fmt.Sprintf("Appointment(location: %q, time: %s)", a.Location, a.Time)
+}
+
+// findAvailableAppointmentDates finds all available dates on the location calendar page.
+func findAvailableAppointmentDates(ctx context.Context) ([]time.Time, error) {
+	var calendarHtml string
+	if err := chromedp.Run(ctx,
+		// Wait for the time select element to appear.
+		chromedp.WaitVisible(appointmentTimeSelectSelector, chromedp.ByQuery),
+
+		// Extract the HTML for the calendar.
+		chromedp.InnerHTML(appointmentCalendarSelector, &calendarHtml, chromedp.ByQuery),
+	); err != nil {
+		return nil, err
+	}
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(calendarHtml))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse HTML: %w", err)
+	}
+
+	// Find the available dates.
+	var availableDates []time.Time
+	doc.Find(appointmentDayButtonSelector).Each(func(i int, s *goquery.Selection) {
+		// Extract the day, month, and year from the DOM node.
+		dayStr := s.Text()
+		monthStr, ok := s.Attr(appointmentMonthAttributeName)
+		if !ok {
+			log.Print("No month attribute")
+			return
+		}
+		yearStr, ok := s.Attr(appointmentYearAttributeName)
+		if !ok {
+			log.Print("No year attribute")
+			return
+		}
+
+		// Parse the date parts.
+		day, err := strconv.ParseInt(dayStr, 10, 32)
+		if err != nil {
+			log.Printf("Invalid day: %s", s.Text())
+			return
+		}
+		month, err := strconv.ParseInt(monthStr, 10, 32)
+		if err != nil {
+			log.Printf("Invalid month: %s", s.Text())
+			return
+		}
+		year, err := strconv.ParseInt(yearStr, 10, 32)
+		if err != nil {
+			log.Printf("Invalid year: %s", s.Text())
+			return
+		}
+
+		// Month is 0-indexed.
+		d := time.Date(int(year), time.Month(month+1), int(day), 0, 0, 0, 0, time.UTC)
+
+		availableDates = append(availableDates, d)
+	})
+
+	return availableDates, nil
+}
+
+// findAvailableAppointments finds all available appointment dates for the given location.
+//
+// NOTE: Currently does not parse the appointment time slots - just dates. Also, this does not look at
+// later months.
+func findAvailableAppointments(ctx context.Context, apptType AppointmentType, location Location, timeout time.Duration) (appointments []*Appointment, _ error) {
+	isAvailable, err := isLocationAvailable(ctx, apptType, location, timeout)
+	if err != nil {
+		return nil, err
+	}
+	if !isAvailable {
+		return nil, nil
+	}
+
+	// At this point, we are on the locations page.
+	// Click the location button.
+	if _, err := chromedp.RunResponse(ctx, chromedp.Click(location.ToSelector()), chromedp.Sleep(3*time.Second)); err != nil {
+		return nil, err
+	}
+
+	availableDates, err := findAvailableAppointmentDates(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, d := range availableDates {
+		appointments = append(appointments, &Appointment{
+			Location: location,
+			Time:     d,
+		})
+	}
+
+	return appointments, nil
+}
+
+// CheckLocations finds all available appointments across the given locations.
+//
+// NOTE: For now, this only looks at _appointment dates_ and only considers the first available month.
+func (c Client) CheckLocations(apptType AppointmentType, locations []Location, timeout time.Duration) ([]*Appointment, error) {
+	// Common timeout for all locations.
 	ctx, cancel := context.WithTimeout(c.ctx, timeout)
 	defer cancel()
 
-	// Setup a seperate tab context for each location.
+	// Setup a seperate tab context for each location. The tabs will be closed when this function
+	// returns.
 	var locationCtxs []context.Context
 	for range locations {
 		ctx, cancel := chromedp.NewContext(ctx)
@@ -111,41 +212,42 @@ func (c Client) CheckLocations(apptType AppointmentType, locations []Location, t
 	}
 
 	type locationResult struct {
-		idx         int
-		isAvailable bool
-		err         error
+		idx          int
+		appointments []*Appointment
+		err          error
 	}
 	resultChan := make(chan locationResult)
 
-	// Spawn a goroutine for each location.
+	// Spawn a goroutine for each location. Each locations is processed in a separate
+	// browser tab.
 	for i, location := range locations {
 		i := i
 		location := location
 		ctx := locationCtxs[i]
 		go func() {
-			isAvailable, err := isLocationAvailable(ctx, apptType, location, timeout)
+			appointments, err := findAvailableAppointments(ctx, apptType, location, timeout)
 			resultChan <- locationResult{
-				idx:         i,
-				isAvailable: isAvailable,
-				err:         err,
+				idx:          i,
+				appointments: appointments,
+				err:          err,
 			}
 		}()
 	}
 
+	// Extract appointments from all of the locations.
+	var appointments []*Appointment
 	for i := 0; i < len(locations); i++ {
 		result := <-resultChan
 		location := locations[result.idx]
 
-		log.Printf("Processing result for location index %q...", location)
 		if result.err != nil {
 			return nil, result.err
 		}
-		if result.isAvailable {
-			// We found a location!
-			return &location, nil
+		if len(result.appointments) == 0 {
+			log.Printf("Location %q has no appointments available", location)
 		}
-		log.Printf("Location %q has no appointments available!", location)
+		appointments = append(appointments, result.appointments...)
 	}
 
-	return nil, nil
+	return appointments, nil
 }

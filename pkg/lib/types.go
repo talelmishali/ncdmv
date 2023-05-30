@@ -55,11 +55,15 @@ func ValidApptTypes() []string {
 type Location int
 
 const (
+	// Values taken from the "data-id" attribute set on each location div.
 	LocationInvalid      Location = iota
 	LocationAhoskie      Location = 99
 	LocationCary         Location = 66
 	LocationDurhamEast   Location = 47
 	LocationDurhamSouth  Location = 80
+	LocationFuquayVarina Location = 38
+	LocationGarner       Location = 69
+	LocationHillsborough Location = 52
 	LocationRaleighEast  Location = 181
 	LocationRaleighNorth Location = 10
 	LocationRaleighWest  Location = 9
@@ -79,6 +83,12 @@ func (l Location) String() string {
 		return "durham-east"
 	case LocationDurhamSouth:
 		return "durham-south"
+	case LocationFuquayVarina:
+		return "fuquay-varina"
+	case LocationGarner:
+		return "garner"
+	case LocationHillsborough:
+		return "hillsborough"
 	case LocationRaleighEast:
 		return "raleigh-east"
 	case LocationRaleighNorth:
@@ -94,6 +104,9 @@ var locationMap map[string]Location = map[string]Location{
 	LocationCary.String():         LocationCary,
 	LocationDurhamEast.String():   LocationDurhamEast,
 	LocationDurhamSouth.String():  LocationDurhamSouth,
+	LocationFuquayVarina.String(): LocationFuquayVarina,
+	LocationGarner.String():       LocationGarner,
+	LocationHillsborough.String(): LocationHillsborough,
 	LocationRaleighEast.String():  LocationRaleighEast,
 	LocationRaleighNorth.String(): LocationRaleighNorth,
 	LocationRaleighWest.String():  LocationRaleighWest,

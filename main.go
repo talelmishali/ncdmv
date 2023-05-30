@@ -18,9 +18,10 @@ const (
 
 var (
 	apptType       = flag.String("appt_type", "permit", fmt.Sprintf("appointment type (one of: %s)", strings.Join(ncdmv.ValidApptTypes(), ",")))
-	locations      = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to look for (valid options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
-	discordWebhook = flag.String("discord_webhook", "", "Discord webhook URL to send notifications to")
-	timeout        = flag.Int("timeout", 10, "timeout (seconds)")
+	locations      = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to check (valid options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
+	discordWebhook = flag.String("discord_webhook", "", "Discord webhook URL for notifications")
+	timeout        = flag.Int("timeout", 60, "timeout (seconds)")
+	stopOnFailure  = flag.Bool("stop_on_failure", false, "if true, stop completely on a failure instead of just logging")
 	interval       = flag.Int("interval", 3, "interval between checks (minutes)")
 	debug          = flag.Bool("debug", false, "enable debug mode")
 	headless       = flag.Bool("headless", true, "enable headless browser")
@@ -58,29 +59,40 @@ func main() {
 	}
 	defer cancel()
 
+	// Keep track of which appointments we've sent notifications for already.
+	appointmentNotifications := make(map[*ncdmv.Appointment]bool)
+
 	for {
-		location, err := client.CheckLocations(parsedApptType, parsedLocations, time.Duration(*timeout)*time.Second)
+		appointments, err := client.CheckLocations(parsedApptType, parsedLocations, time.Duration(*timeout)*time.Second)
 		if err != nil {
-			log.Fatalf("Failed to check all locations: %v", err)
+			if *stopOnFailure {
+				log.Fatalf("Failed to check all locations: %v", err)
+			} else {
+				log.Printf("Failed to check all locations: %v", err)
+			}
 		}
 
-		if location != nil {
-			log.Printf("Found available location %q", *location)
-			if *discordWebhook != "" {
-				username := discordWebhookUsername
-				content := fmt.Sprintf("Found appointment at location %q", *location)
-				if err := discordwebhook.SendMessage(*discordWebhook, discordwebhook.Message{
-					Username: &username,
-					Content:  &content,
-				}); err != nil {
-					log.Printf("Failed to send message to Discord webhook %q: %v", *discordWebhook, err)
+		for _, appointment := range appointments {
+			log.Printf("Found appointment: %q", appointment)
+
+			// Send a notification for this appointment if we haven't already done so.
+			if !appointmentNotifications[appointment] {
+				if *discordWebhook != "" {
+					username := discordWebhookUsername
+					content := fmt.Sprintf("Found appointment: %q", appointment)
+					if err := discordwebhook.SendMessage(*discordWebhook, discordwebhook.Message{
+						Username: &username,
+						Content:  &content,
+					}); err != nil {
+						log.Printf("Failed to send message to Discord webhook %q: %v", *discordWebhook, err)
+					}
 				}
+				appointmentNotifications[appointment] = true
 			}
-			break
 		}
 
 		interval := time.Duration(*interval) * time.Minute
-		log.Printf("Sleeping for %v between location checks...", interval)
+		log.Printf("Sleeping for %v between checks...", interval)
 		time.Sleep(interval)
 	}
 }
