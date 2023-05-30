@@ -37,7 +37,7 @@ type Client struct {
 	ctx                      context.Context
 	discordWebhook           string
 	stopOnFailure            bool
-	appointmentNotifications map[*Appointment]bool
+	appointmentNotifications map[Appointment]bool
 }
 
 func NewClient(ctx context.Context, discordWebhook string, headless, debug, stopOnFailure bool) (*Client, context.CancelFunc, error) {
@@ -64,7 +64,7 @@ func NewClient(ctx context.Context, discordWebhook string, headless, debug, stop
 		ctx:                      ctx,
 		discordWebhook:           discordWebhook,
 		stopOnFailure:            stopOnFailure,
-		appointmentNotifications: make(map[*Appointment]bool),
+		appointmentNotifications: make(map[Appointment]bool),
 	}, cancel, nil
 }
 
@@ -283,7 +283,7 @@ func (c Client) Start(apptType AppointmentType, locations []Location, timeout, i
 		log.Printf("Found appointment: %q", appointment)
 
 		// Send a notification for this appointment if we haven't already done so.
-		if !c.appointmentNotifications[appointment] {
+		if !c.appointmentNotifications[*appointment] {
 			if c.discordWebhook != "" {
 				username := discordWebhookUsername
 				content := fmt.Sprintf("Found appointment: %q", appointment)
@@ -294,7 +294,7 @@ func (c Client) Start(apptType AppointmentType, locations []Location, timeout, i
 					log.Printf("Failed to send message to Discord webhook %q: %v", c.discordWebhook, err)
 				}
 			}
-			c.appointmentNotifications[appointment] = true
+			c.appointmentNotifications[*appointment] = true
 		}
 
 		log.Printf("Sleeping for %v between checks...", interval)
