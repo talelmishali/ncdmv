@@ -205,6 +205,28 @@ func findAvailableAppointments(ctx context.Context, apptType AppointmentType, lo
 	return appointments, nil
 }
 
+func (c Client) sendDiscordMessage(appointment Appointment) error {
+	if c.discordWebhook == "" {
+		// Nothing to do here.
+		return nil
+	}
+
+	// Send a notification for this appointment if we haven't already done so.
+	if !c.appointmentNotifications[appointment] {
+		username := discordWebhookUsername
+		content := fmt.Sprintf("Found appointment: %q", appointment)
+		if err := discordwebhook.SendMessage(c.discordWebhook, discordwebhook.Message{
+			Username: &username,
+			Content:  &content,
+		}); err != nil {
+			return fmt.Errorf("failed to send message to Discord webhook: %w", err)
+		}
+		c.appointmentNotifications[appointment] = true
+	}
+
+	return nil
+}
+
 // RunForLocations finds all available appointments across the given locations.
 //
 // NOTE: For now, this only looks at _appointment dates_ and only considers the first available month.
@@ -279,27 +301,14 @@ func (c Client) Start(apptType AppointmentType, locations []Location, timeout, i
 		}
 	}
 
-	for _, appointment := range appointments {
-		log.Printf("Found appointment: %q", appointment)
-
-		// Send a notification for this appointment if we haven't already done so.
-		if !c.appointmentNotifications[*appointment] {
-			if c.discordWebhook != "" {
-				username := discordWebhookUsername
-				content := fmt.Sprintf("Found appointment: %q", appointment)
-				if err := discordwebhook.SendMessage(c.discordWebhook, discordwebhook.Message{
-					Username: &username,
-					Content:  &content,
-				}); err != nil {
-					log.Printf("Failed to send message to Discord webhook %q: %v", c.discordWebhook, err)
-				}
+	for {
+		for _, appointment := range appointments {
+			log.Printf("Found appointment: %q", appointment)
+			if err := c.sendDiscordMessage(*appointment); err != nil {
+				log.Printf("Failed to send message to Discord webhook %q: %v", c.discordWebhook, err)
 			}
-			c.appointmentNotifications[*appointment] = true
 		}
-
 		log.Printf("Sleeping for %v between checks...", interval)
 		time.Sleep(interval)
 	}
-
-	return nil
 }
