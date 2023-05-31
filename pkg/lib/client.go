@@ -71,22 +71,7 @@ func NewClient(ctx context.Context, discordWebhook string, headless, disableGpu,
 	}, cancel, nil
 }
 
-func isLocationAvailable(ctx context.Context, apptType AppointmentType, location Location, timeout time.Duration) (bool, error) {
-	// Navigate to the main page.
-	if _, err := chromedp.RunResponse(ctx, chromedp.Navigate(makeApptUrl)); err != nil {
-		return false, err
-	}
-
-	// Click the "Make Appointment" button once it is visible.
-	if _, err := chromedp.RunResponse(ctx, chromedp.Click(makeApptButtonSelector, chromedp.NodeVisible, chromedp.ByQuery)); err != nil {
-		return false, err
-	}
-
-	// Click the appointment type button.
-	if _, err := chromedp.RunResponse(ctx, chromedp.Click(apptType.ToSelector(), chromedp.NodeVisible, chromedp.ByQuery)); err != nil {
-		return false, err
-	}
-
+func isLocationAvailable(ctx context.Context, apptType AppointmentType, location Location) (bool, error) {
 	// Wait for the location and read the node.
 	var nodes []*cdp.Node
 	if err := chromedp.Run(ctx,
@@ -121,7 +106,7 @@ func findAvailableAppointmentDates(ctx context.Context) ([]time.Time, error) {
 		// Wait for the time select element to appear.
 		chromedp.WaitVisible(appointmentTimeSelectSelector, chromedp.ByQuery),
 
-		// Extract the HTML for the calendar.
+		// Extract the HTML for the calendar widget.
 		chromedp.InnerHTML(appointmentCalendarSelector, &calendarHtml, chromedp.ByQuery),
 	); err != nil {
 		return nil, err
@@ -132,7 +117,10 @@ func findAvailableAppointmentDates(ctx context.Context) ([]time.Time, error) {
 		return nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
 
-	// Find the available dates.
+	// Find the available dates by parsing the HTML.
+	// TODO(aksiksi): Figure out how to also parse appointment times.
+	// Also, it would be cool if we could advance the month in the calendar widget to see
+	// all appointment slots.
 	var availableDates []time.Time
 	doc.Find(appointmentDayButtonSelector).Each(func(i int, s *goquery.Selection) {
 		// Extract the day, month, and year from the DOM node.
@@ -174,38 +162,76 @@ func findAvailableAppointmentDates(ctx context.Context) ([]time.Time, error) {
 	return availableDates, nil
 }
 
+// appointmentFlowState represents the current state of the appointment workflow for a single location.
+type appointmentFlowState int
+
+const (
+	appointmentFlowStateStart appointmentFlowState = iota
+	appointmentFlowStateMainPage
+	appointmentFlowStateAppointmentType
+	appointmentFlowStateLocationsPage
+	appointmentFlowStateLocationCalendar
+)
+
 // findAvailableAppointments finds all available appointment dates for the given location.
+//
+// This function uses a simple state machine to navigate the appointment flow.
 //
 // NOTE: Currently does not parse the appointment time slots - just dates. Also, this does not look at
 // later months.
-func findAvailableAppointments(ctx context.Context, apptType AppointmentType, location Location, timeout time.Duration) (appointments []*Appointment, _ error) {
-	isAvailable, err := isLocationAvailable(ctx, apptType, location, timeout)
-	if err != nil {
-		return nil, err
-	}
-	if !isAvailable {
-		return nil, nil
-	}
+func findAvailableAppointments(ctx context.Context, apptType AppointmentType, location Location) (appointments []*Appointment, _ error) {
+	state := appointmentFlowStateStart
 
-	// At this point, we are on the locations page.
-	// Click the location button.
-	if _, err := chromedp.RunResponse(ctx, chromedp.Click(location.ToSelector()), chromedp.Sleep(3*time.Second)); err != nil {
-		return nil, err
+	for {
+		switch state {
+		case appointmentFlowStateStart:
+			// Navigate to the main page.
+			if _, err := chromedp.RunResponse(ctx, chromedp.Navigate(makeApptUrl)); err != nil {
+				return nil, err
+			}
+			state = appointmentFlowStateMainPage
+		case appointmentFlowStateMainPage:
+			// Click the "Make Appointment" button once it is visible.
+			if _, err := chromedp.RunResponse(ctx, chromedp.Click(makeApptButtonSelector, chromedp.NodeVisible, chromedp.ByQuery)); err != nil {
+				return nil, err
+			}
+			state = appointmentFlowStateAppointmentType
+		case appointmentFlowStateAppointmentType:
+			// Click the appointment type button.
+			if _, err := chromedp.RunResponse(ctx, chromedp.Click(apptType.ToSelector(), chromedp.NodeVisible, chromedp.ByQuery)); err != nil {
+				return nil, err
+			}
+			state = appointmentFlowStateLocationsPage
+		case appointmentFlowStateLocationsPage:
+			// Check if the location is available.
+			isAvailable, err := isLocationAvailable(ctx, apptType, location)
+			if err != nil {
+				return nil, err
+			}
+			// If it isn't, it means no appointments are available.
+			if !isAvailable {
+				return nil, nil
+			}
+			// At this point, we are on the locations page. Click the location button.
+			if _, err := chromedp.RunResponse(ctx, chromedp.Click(location.ToSelector())); err != nil {
+				return nil, err
+			}
+			state = appointmentFlowStateLocationCalendar
+		case appointmentFlowStateLocationCalendar:
+			// Find available dates for this location by parsing the calendar HTML.
+			availableDates, err := findAvailableAppointmentDates(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, d := range availableDates {
+				appointments = append(appointments, &Appointment{
+					Location: location,
+					Time:     d,
+				})
+			}
+			return appointments, nil
+		}
 	}
-
-	availableDates, err := findAvailableAppointmentDates(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, d := range availableDates {
-		appointments = append(appointments, &Appointment{
-			Location: location,
-			Time:     d,
-		})
-	}
-
-	return appointments, nil
 }
 
 func (c Client) sendDiscordMessage(appointment Appointment) error {
@@ -261,7 +287,7 @@ func (c Client) RunForLocations(apptType AppointmentType, locations []Location, 
 		location := location
 		ctx := locationCtxs[i]
 		go func() {
-			appointments, err := findAvailableAppointments(ctx, apptType, location, timeout)
+			appointments, err := findAvailableAppointments(ctx, apptType, location)
 			resultChan <- locationResult{
 				idx:          i,
 				appointments: appointments,
