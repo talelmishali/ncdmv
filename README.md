@@ -30,19 +30,19 @@ Usage of ncdmv:
 Run in headless mode:
 
 ```
-$ go run . -locations=cary,durham-east,durham-south,fuquay-varina,garner,hillsborough,raleigh-east,raleigh-north,raleigh-west -discord_webhook=[WEBHOOK]
+go run . -locations=cary,durham-east,durham-south -discord_webhook=[WEBHOOK]
 ```
 
-Open the browser and set a timeout of 2 minutes for a single check (across all locations):
+Show the browser with a timeout of 2 minutes each check (across all locations) and an interval of 10 minutes:
 
 ```
-$ go run . -headless=false -timeout=120 -locations=cary,durham-east,durham-south,fuquay-varina,garner,hillsborough,raleigh-east,raleigh-north,raleigh-west -discord_webhook=[WEBHOOK]
+go run . -headless=false -locations=cary,durham-east,durham-south -discord_webhook=[WEBHOOK] -timeout=120 -interval=10
 ```
 
-Run using Docker:
+Run on Docker:
 
 ```
-$ docker run --rm ghcr.io/aksiksi/ncdmv:latest ncdmv [...]
+docker run --rm ghcr.io/aksiksi/ncdmv:latest ncdmv -h
 ```
 
 ### Setup (Debian)
