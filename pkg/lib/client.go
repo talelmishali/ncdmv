@@ -295,22 +295,23 @@ func (c Client) RunForLocations(apptType AppointmentType, locations []Location, 
 //
 // If "stopOnFailure" is true for this client, this method will return any error encountered.
 func (c Client) Start(apptType AppointmentType, locations []Location, timeout, interval time.Duration) error {
-	appointments, err := c.RunForLocations(apptType, locations, timeout)
-	if err != nil {
-		if c.stopOnFailure {
-			return fmt.Errorf("failed to check locations: %w", err)
-		} else {
-			log.Printf("Failed to check locations: %v", err)
-		}
-	}
-
 	for {
+		appointments, err := c.RunForLocations(apptType, locations, timeout)
+		if err != nil {
+			if c.stopOnFailure {
+				return fmt.Errorf("failed to check locations: %w", err)
+			} else {
+				log.Printf("Failed to check locations: %v", err)
+			}
+		}
+
 		for _, appointment := range appointments {
 			log.Printf("Found appointment: %q", appointment)
 			if err := c.sendDiscordMessage(*appointment); err != nil {
 				log.Printf("Failed to send message to Discord webhook %q: %v", c.discordWebhook, err)
 			}
 		}
+
 		log.Printf("Sleeping for %v between checks...", interval)
 		time.Sleep(interval)
 	}
