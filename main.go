@@ -17,15 +17,15 @@ const (
 )
 
 var (
-	apptType       = flag.String("appt_type", "permit", fmt.Sprintf("appointment type (one of: %s)", strings.Join(ncdmv.ValidApptTypes(), ",")))
-	locations      = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to check (valid options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
-	discordWebhook = flag.String("discord_webhook", "", "Discord webhook URL for notifications")
-	timeout        = flag.Int("timeout", 60, "timeout (seconds)")
+	apptType       = flag.String("appt_type", "permit", fmt.Sprintf("appointment type (options: %s)", strings.Join(ncdmv.ValidApptTypes(), ",")))
+	locations      = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to check (options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
+	discordWebhook = flag.String("discord_webhook", "", "Discord webhook URL for notifications (optional)")
+	timeout        = flag.Int("timeout", 60, "timeout, in seconds")
 	stopOnFailure  = flag.Bool("stop_on_failure", false, "if true, stop completely on a failure instead of just logging")
-	interval       = flag.Int("interval", 3, "interval between checks (minutes)")
+	interval       = flag.Int("interval", 30, "interval between checks, in minutes")
 	debug          = flag.Bool("debug", false, "enable debug mode")
 	headless       = flag.Bool("headless", true, "enable headless browser")
-	disableGpu     = flag.Bool("disable_gpu", false, "if true, disable GPU")
+	disableGpu     = flag.Bool("disable_gpu", false, "disable GPU")
 )
 
 func main() {
