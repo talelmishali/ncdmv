@@ -40,11 +40,14 @@ type Client struct {
 	appointmentNotifications map[Appointment]bool
 }
 
-func NewClient(ctx context.Context, discordWebhook string, headless, debug, stopOnFailure bool) (*Client, context.CancelFunc, error) {
+func NewClient(ctx context.Context, discordWebhook string, headless, disableGpu, debug, stopOnFailure bool) (*Client, context.CancelFunc, error) {
 	allocatorOpts := chromedp.DefaultExecAllocatorOptions[:]
 	var ctxOpts []chromedp.ContextOption
 	if !headless {
 		allocatorOpts = append(allocatorOpts, chromedp.Flag("headless", false))
+	}
+	if disableGpu {
+		allocatorOpts = append(allocatorOpts, chromedp.DisableGPU)
 	}
 	if debug {
 		ctxOpts = append(ctxOpts, chromedp.WithDebugf(log.Printf))

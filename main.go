@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 const (
-	discordWebhookUsername = "ncdmv-bot"
+	disableGpuEnvVar = "NCDMV_DISABLE_GPU"
 )
 
 var (
@@ -24,6 +25,7 @@ var (
 	interval       = flag.Int("interval", 3, "interval between checks (minutes)")
 	debug          = flag.Bool("debug", false, "enable debug mode")
 	headless       = flag.Bool("headless", true, "enable headless browser")
+	disableGpu     = flag.Bool("disable_gpu", false, "if true, disable GPU")
 )
 
 func main() {
@@ -52,7 +54,9 @@ func main() {
 		parsedLocations = append(parsedLocations, parsedLocation)
 	}
 
-	client, cancel, err := ncdmv.NewClient(ctx, *discordWebhook, *headless, *debug, *stopOnFailure)
+	disableGpu := os.Getenv(disableGpuEnvVar) != "" || *disableGpu
+
+	client, cancel, err := ncdmv.NewClient(ctx, *discordWebhook, *headless, disableGpu, *debug, *stopOnFailure)
 	if err != nil {
 		log.Fatalf("failed to create client: %v", err)
 	}
