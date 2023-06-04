@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
 	"time"
 
@@ -17,15 +16,36 @@ import (
 const (
 	discordWebhookUsername = "ncdmv-bot"
 
-	makeApptUrl                   = "https://skiptheline.ncdot.gov/"
-	makeApptButtonSelector        = "button#cmdMakeAppt"
-	locationAvailableClassName    = "Active-Unit"
-	appointmentCalendarSelector   = "div.CalendarDateModel.hasDatepicker"
-	appointmentDayButtonSelector  = `td[data-handler="selectDay"]`
-	appointmentMonthAttributeName = "data-month"
-	appointmentYearAttributeName  = "data-year"
-	appointmentTimeSelectSelector = "div.AppointmentTime select"
+	makeApptUrl = "https://skiptheline.ncdot.gov/"
+
+	// Selectors
+	makeApptButtonSelector               = "button#cmdMakeAppt"
+	appointmentCalendarSelector          = "div.CalendarDateModel.hasDatepicker"
+	appointmentDaySelector               = `td[data-handler="selectDay"]`
+	appointmentDayLinkSelector           = `td[data-handler="selectDay"] > a.ui-state-default`
+	appointmentTimeDropdownSelector      = "div.AppointmentTime select"
+	loadingSpinnerSelector               = "div.blockUI"
+	appointmentCalendarNextMonthSelector = "a.ui-datepicker-next"
+
+	// Class and attribute names
+	locationAvailableClassName       = "Active-Unit"
+	appointmentMonthAttributeName    = "data-month"
+	appointmentYearAttributeName     = "data-year"
+	appointmentDatetimeAttributeName = "data-datetime"
+	appointmentTypeIDAttributeName   = "data-appointmenttypeid"
+
+	appointmentTimeFormat = "1/2/2006 3:04:05 PM"
 )
+
+var tz = loadTimezoneUnchecked("America/New_York")
+
+func loadTimezoneUnchecked(tz string) *time.Location {
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		log.Fatalf("Failed to load timezone %q: %v", tz, err)
+	}
+	return loc
+}
 
 // isLocationNodeEnabled returns "true" if the location DOM node is available/clickable.
 func isLocationNodeEnabled(node *cdp.Node) bool {
@@ -99,67 +119,150 @@ func (a Appointment) String() string {
 	return fmt.Sprintf("Appointment(location: %q, time: %s)", a.Location, a.Time)
 }
 
-// findAvailableAppointmentDates finds all available dates on the location calendar page.
-func findAvailableAppointmentDates(ctx context.Context) ([]time.Time, error) {
-	var calendarHtml string
-	if err := chromedp.Run(ctx,
-		// Wait for the time select element to appear.
-		chromedp.WaitVisible(appointmentTimeSelectSelector, chromedp.ByQuery),
+// extractAppointmentTimesForDay lists all of the appointments available for the selected
+// day in the calendar.
+func extractAppointmentTimesForDay(ctx context.Context, apptType AppointmentType) ([]time.Time, error) {
+	// This selects options from the appointment time dropdown that match the selected appointment type.
+	optionSelector := fmt.Sprintf(`option[%s="%d"]`, appointmentTypeIDAttributeName, apptType)
 
-		// Extract the HTML for the calendar widget.
-		chromedp.InnerHTML(appointmentCalendarSelector, &calendarHtml, chromedp.ByQuery),
+	var timeDropdownHtml string
+	if err := chromedp.Run(ctx,
+		// Wait for the time dropdown element to contain valid appointment time options.
+		chromedp.WaitReady(optionSelector, chromedp.ByQuery),
+
+		// Extract the HTML for the time dropdown.
+		chromedp.OuterHTML(appointmentTimeDropdownSelector, &timeDropdownHtml, chromedp.ByQuery),
 	); err != nil {
 		return nil, err
 	}
 
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(calendarHtml))
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(timeDropdownHtml))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
 
-	// Find the available dates by parsing the HTML.
-	// TODO(aksiksi): Figure out how to also parse appointment times.
-	// Also, it would be cool if we could advance the month in the calendar widget to see
-	// all appointment slots.
-	var availableDates []time.Time
-	doc.Find(appointmentDayButtonSelector).Each(func(i int, s *goquery.Selection) {
-		// Extract the day, month, and year from the DOM node.
-		dayStr := s.Text()
-		monthStr, ok := s.Attr(appointmentMonthAttributeName)
+	var availableTimes []time.Time
+	doc.Find(optionSelector).Each(func(i int, s *goquery.Selection) {
+		dt, ok := s.Attr(appointmentDatetimeAttributeName)
 		if !ok {
-			log.Print("No month attribute")
 			return
 		}
-		yearStr, ok := s.Attr(appointmentYearAttributeName)
-		if !ok {
-			log.Print("No year attribute")
-			return
-		}
-
-		// Parse the date parts.
-		day, err := strconv.ParseInt(dayStr, 10, 32)
+		t, err := time.ParseInLocation(appointmentTimeFormat, dt, tz)
 		if err != nil {
-			log.Printf("Invalid day: %s", s.Text())
+			log.Printf("Failed to parse datetime %q: %v", dt, err)
 			return
 		}
-		month, err := strconv.ParseInt(monthStr, 10, 32)
-		if err != nil {
-			log.Printf("Invalid month: %s", s.Text())
-			return
-		}
-		year, err := strconv.ParseInt(yearStr, 10, 32)
-		if err != nil {
-			log.Printf("Invalid year: %s", s.Text())
-			return
-		}
-
-		// Month is 0-indexed.
-		d := time.Date(int(year), time.Month(month+1), int(day), 0, 0, 0, 0, time.UTC)
-
-		availableDates = append(availableDates, d)
+		availableTimes = append(availableTimes, t)
 	})
 
-	return availableDates, nil
+	return availableTimes, nil
+}
+
+// findAvailableAppointmentDateNodeIDs finds all available dates on the location calendar page
+// for the current/selected month and returns their node IDs.
+func findAvailableAppointmentDateNodeIDs(ctx context.Context) ([]cdp.NodeID, error) {
+	var nodeIDs []cdp.NodeID
+	if err := chromedp.Run(ctx,
+		// Wait for the spinner to disappear.
+		chromedp.WaitNotPresent(loadingSpinnerSelector, chromedp.ByQuery),
+
+		// Find all active/clickable day nodes.
+		chromedp.NodeIDs(appointmentDayLinkSelector, &nodeIDs, chromedp.NodeEnabled, chromedp.ByQueryAll),
+	); err != nil {
+		return nil, err
+	}
+	return nodeIDs, nil
+}
+
+// navigateAppointmentCalendarDays clicks each open day on the calendar for the current month
+// and returns all available time slots.
+func navigateAppointmentCalendarDays(ctx context.Context, apptType AppointmentType) (appointmentTimes []time.Time, _ error) {
+	// Find the node IDs for the available dates.
+	nodeIDs, err := findAvailableAppointmentDateNodeIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	numNodes := len(nodeIDs)
+
+	for i := 0; i < numNodes; i++ {
+		nodeID := nodeIDs[i]
+
+		if err := chromedp.Run(ctx,
+			chromedp.Click([]cdp.NodeID{nodeID}, chromedp.ByNodeID),
+
+			// Wait for the spinner to appear.
+			chromedp.WaitReady(loadingSpinnerSelector, chromedp.ByQuery),
+
+			// Wait for the spinner to disappear.
+			chromedp.WaitNotPresent(loadingSpinnerSelector, chromedp.ByQuery),
+		); err != nil {
+			return nil, err
+		}
+
+		// Extract appointment times for the current date.
+		times, err := extractAppointmentTimesForDay(ctx, apptType)
+		if err != nil {
+			return nil, err
+		}
+
+		// Refresh node IDs after clicking each date.
+		nodeIDs, err = findAvailableAppointmentDateNodeIDs(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(nodeIDs) != numNodes {
+			// The calendar UI has changed. We can't proceed.
+			return nil, fmt.Errorf("original node count (%d) != new node count (%d)", numNodes, len(nodeIDs))
+		}
+
+		appointmentTimes = append(appointmentTimes, times...)
+	}
+
+	return appointmentTimes, nil
+}
+
+// navigateAppointmentCalendar starts on the calendar page and finds all available appointments.
+// It then keeps clicking on the right arrow and repeating the process for each month. It stops
+// once the arrow becomes inactive (no more months).
+func navigateAppointmentCalendar(ctx context.Context, apptType AppointmentType) (appointmentTimes []time.Time, _ error) {
+	if err := chromedp.Run(ctx,
+		// Wait for the spinner to appear.
+		chromedp.WaitReady(loadingSpinnerSelector, chromedp.ByQuery),
+
+		// Wait for the spinner to disappear.
+		chromedp.WaitNotPresent(loadingSpinnerSelector, chromedp.ByQuery),
+	); err != nil {
+		return nil, err
+	}
+
+	for {
+		times, err := navigateAppointmentCalendarDays(ctx, apptType)
+		if err != nil {
+			return nil, err
+		}
+		appointmentTimes = append(appointmentTimes, times...)
+
+		// Figure out if the next month button is clickable.
+		var attrValue string
+		var attrExists bool
+		var nodeIDs []cdp.NodeID
+		if err := chromedp.Run(ctx,
+			chromedp.AttributeValue(appointmentCalendarNextMonthSelector, "data-handler", &attrValue, &attrExists, chromedp.ByQuery),
+			chromedp.NodeIDs(appointmentCalendarNextMonthSelector, &nodeIDs, chromedp.ByQuery),
+		); err != nil {
+			return nil, err
+		}
+		if !attrExists {
+			break
+		}
+
+		// Click the next month button.
+		if err := chromedp.Run(ctx, chromedp.Click([]cdp.NodeID{nodeIDs[0]}, chromedp.ByNodeID)); err != nil {
+			return nil, err
+		}
+	}
+
+	return appointmentTimes, nil
 }
 
 // appointmentFlowState represents the current state of the appointment workflow for a single location.
@@ -219,11 +322,11 @@ func findAvailableAppointments(ctx context.Context, apptType AppointmentType, lo
 			state = appointmentFlowStateLocationCalendar
 		case appointmentFlowStateLocationCalendar:
 			// Find available dates for this location by parsing the calendar HTML.
-			availableDates, err := findAvailableAppointmentDates(ctx)
+			appointmentTimes, err := navigateAppointmentCalendar(ctx, apptType)
 			if err != nil {
 				return nil, err
 			}
-			for _, d := range availableDates {
+			for _, d := range appointmentTimes {
 				appointments = append(appointments, &Appointment{
 					Location: location,
 					Time:     d,
@@ -243,7 +346,7 @@ func (c Client) sendDiscordMessage(appointment Appointment) error {
 	// Send a notification for this appointment if we haven't already done so.
 	if !c.appointmentNotifications[appointment] {
 		username := discordWebhookUsername
-		content := fmt.Sprintf("Found appointment: %q", appointment)
+		content := fmt.Sprintf("Found appointment: %q, Book here: https://skiptheline.ncdot.gov", appointment)
 		if err := discordwebhook.SendMessage(c.discordWebhook, discordwebhook.Message{
 			Username: &username,
 			Content:  &content,
