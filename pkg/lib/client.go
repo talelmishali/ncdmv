@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"strings"
@@ -53,42 +54,19 @@ func isLocationNodeEnabled(node *cdp.Node) bool {
 }
 
 type Client struct {
-	// chromedp browser context.
-	ctx                      context.Context
+	db                       *sql.DB
 	discordWebhook           string
 	stopOnFailure            bool
 	appointmentNotifications map[Appointment]bool
 }
 
-func NewClient(ctx context.Context, discordWebhook string, headless, disableGpu, debug, stopOnFailure bool) (*Client, context.CancelFunc, error) {
-	allocatorOpts := chromedp.DefaultExecAllocatorOptions[:]
-	var ctxOpts []chromedp.ContextOption
-	if !headless {
-		allocatorOpts = append(allocatorOpts, chromedp.Flag("headless", false))
-	}
-	if disableGpu {
-		allocatorOpts = append(allocatorOpts, chromedp.DisableGPU)
-	}
-	if debug {
-		ctxOpts = append(ctxOpts, chromedp.WithDebugf(log.Printf))
-	}
-
-	ctx, cancel1 := chromedp.NewExecAllocator(ctx, allocatorOpts...)
-	ctx, cancel2 := chromedp.NewContext(ctx, ctxOpts...)
-	cancel := func() { cancel2(); cancel1() }
-
-	// Open the first (empty) tab.
-	if err := chromedp.Run(ctx); err != nil {
-		cancel()
-		return nil, nil, fmt.Errorf("failed to open first tab: %w", err)
-	}
-
+func NewClient(db *sql.DB, discordWebhook string, stopOnFailure bool) *Client {
 	return &Client{
-		ctx:                      ctx,
+		db:                       db,
 		discordWebhook:           discordWebhook,
 		stopOnFailure:            stopOnFailure,
 		appointmentNotifications: make(map[Appointment]bool),
-	}, cancel, nil
+	}
 }
 
 func isLocationAvailable(ctx context.Context, apptType AppointmentType, location Location) (bool, error) {
@@ -364,9 +342,9 @@ func (c Client) sendDiscordMessage(appointment Appointment) error {
 // RunForLocations finds all available appointments across the given locations.
 //
 // NOTE: For now, this only looks at _appointment dates_ and only considers the first available month.
-func (c Client) RunForLocations(apptType AppointmentType, locations []Location, timeout time.Duration) ([]*Appointment, error) {
+func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, locations []Location, timeout time.Duration) ([]*Appointment, error) {
 	// Common timeout for all locations.
-	ctx, cancel := context.WithTimeout(c.ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// Setup a seperate tab context for each location. The tabs will be closed when this function
@@ -424,10 +402,10 @@ func (c Client) RunForLocations(apptType AppointmentType, locations []Location, 
 //
 // Note that this method will block indefinitely. If you want to just run a single search, use RunForLocations.
 //
-// If "stopOnFailure" is true for this client, this method will return any error encountered.
-func (c Client) Start(apptType AppointmentType, locations []Location, timeout, interval time.Duration) error {
+// If "stopOnFailure" is set to true for this client, this method will terminate on any error encountered.
+func (c Client) Start(ctx context.Context, apptType AppointmentType, locations []Location, timeout, interval time.Duration) error {
 	for {
-		appointments, err := c.RunForLocations(apptType, locations, timeout)
+		appointments, err := c.RunForLocations(ctx, apptType, locations, timeout)
 		if err != nil {
 			if c.stopOnFailure {
 				return fmt.Errorf("failed to check locations: %w", err)

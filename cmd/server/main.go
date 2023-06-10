@@ -66,16 +66,22 @@ func main() {
 	}
 	defer db.Close()
 
-	client, cancel, err := ncdmv.NewClient(ctx, *discordWebhook, *headless, disableGpu, *debug, *stopOnFailure)
+	// Initialize the Chrome context and open a new window.
+	ctx, cancel, err := ncdmv.NewChromeContext(ctx, *headless, disableGpu, *debug)
+	if err != nil {
+		log.Fatalf("Failed to init Chrome context: %s", err)
+	}
+	defer cancel()
+
+	client := ncdmv.NewClient(db, *discordWebhook, *stopOnFailure)
 	if err != nil {
 		log.Fatalf("failed to create client: %v", err)
 	}
-	defer cancel()
 
 	parsedTimeout := time.Duration(*timeout) * time.Second
 	parsedInterval := time.Duration(*interval) * time.Minute
 
-	if err := client.Start(parsedApptType, parsedLocations, parsedTimeout, parsedInterval); err != nil {
+	if err := client.Start(ctx, parsedApptType, parsedLocations, parsedTimeout, parsedInterval); err != nil {
 		log.Fatal(err)
 	}
 }
