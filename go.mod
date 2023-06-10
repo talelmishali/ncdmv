@@ -7,6 +7,7 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20230524011726-8501c74e8228
 	github.com/chromedp/chromedp v0.9.1
 	github.com/gtuk/discordwebhook v1.1.0
+	github.com/mattn/go-sqlite3 v1.14.17
 )
 
 require (

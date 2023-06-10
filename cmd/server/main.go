@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"strings"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 
 	ncdmv "github.com/aksiksi/ncdmv/pkg/lib"
 )
@@ -18,6 +21,7 @@ const (
 
 var (
 	apptType       = flag.String("appt_type", "permit", fmt.Sprintf("appointment type (options: %s)", strings.Join(ncdmv.ValidApptTypes(), ",")))
+	databasePath   = flag.String("database_path", "./ncdmv.db", "path to database file")
 	locations      = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to check (options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
 	discordWebhook = flag.String("discord_webhook", "", "Discord webhook URL for notifications (optional)")
 	timeout        = flag.Int("timeout", 60, "timeout, in seconds")
@@ -55,6 +59,12 @@ func main() {
 	}
 
 	disableGpu := os.Getenv(disableGpuEnvVar) != "" || *disableGpu
+
+	db, err := sql.Open("sqlite3", *databasePath)
+	if err != nil {
+		log.Fatalf("Failed to initialize DB: %s", err)
+	}
+	defer db.Close()
 
 	client, cancel, err := ncdmv.NewClient(ctx, *discordWebhook, *headless, disableGpu, *debug, *stopOnFailure)
 	if err != nil {
