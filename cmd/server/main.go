@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	ncdmv "github.com/aksiksi/ncdmv/pkg/lib"
 )
@@ -60,11 +60,15 @@ func main() {
 
 	disableGpu := os.Getenv(disableGpuEnvVar) != "" || *disableGpu
 
-	db, err := sql.Open("sqlite3", *databasePath)
+	db, err := sql.Open("sqlite", *databasePath)
 	if err != nil {
 		log.Fatalf("Failed to initialize DB: %s", err)
 	}
 	defer db.Close()
+
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON;"); err != nil {
+		log.Fatalf("Failed to enable foreign key support: %s", err)
+	}
 
 	// Initialize the Chrome context and open a new window.
 	ctx, cancel, err := ncdmv.NewChromeContext(ctx, *headless, disableGpu, *debug)
