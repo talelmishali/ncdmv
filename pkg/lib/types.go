@@ -28,16 +28,44 @@ func (a AppointmentType) ToSelector() string {
 const (
 	AppointmentTypeInvalid                AppointmentType = iota
 	AppointmentTypeDriverLicense          AppointmentType = 1
-	AppointmentTypeDriverLicenseDuplicate                 = 2
-	AppointmentTypeDriverLicenseRenewal                   = 3
-	AppointmentTypePermit                                 = 9
+	AppointmentTypeDriverLicenseDuplicate AppointmentType = 2
+	AppointmentTypeDriverLicenseRenewal   AppointmentType = 3
+	AppointmentTypeIdCard                 AppointmentType = 5
+	AppointmentTypeKnowledgeTest          AppointmentType = 6
+	AppointmentTypeMotorcycleSkillsTest   AppointmentType = 8
+	AppointmentTypePermit                 AppointmentType = 9
 )
 
+func (a AppointmentType) String() string {
+	switch a {
+	case AppointmentTypeInvalid:
+		return "invalid"
+	case AppointmentTypeDriverLicense:
+		return "driver-license"
+	case AppointmentTypeDriverLicenseDuplicate:
+		return "driver-license-duplicate"
+	case AppointmentTypeDriverLicenseRenewal:
+		return "driver-license-renewal"
+	case AppointmentTypeIdCard:
+		return "id-card"
+	case AppointmentTypeKnowledgeTest:
+		return "knowledge-test"
+	case AppointmentTypeMotorcycleSkillsTest:
+		return "motorcycle-skills-test"
+	case AppointmentTypePermit:
+		return "permit"
+	}
+	panic("unreachable: invalid AppointmentType")
+}
+
 var appointmentTypeMap map[string]AppointmentType = map[string]AppointmentType{
-	"license":           AppointmentTypeDriverLicense,
-	"license-duplicate": AppointmentTypeDriverLicenseDuplicate,
-	"license-renewal":   AppointmentTypeDriverLicenseRenewal,
-	"permit":            AppointmentTypePermit,
+	AppointmentTypeDriverLicense.String():          AppointmentTypeDriverLicense,
+	AppointmentTypeDriverLicenseDuplicate.String(): AppointmentTypeDriverLicenseDuplicate,
+	AppointmentTypeDriverLicenseRenewal.String():   AppointmentTypeDriverLicenseRenewal,
+	AppointmentTypeIdCard.String():                 AppointmentTypeIdCard,
+	AppointmentTypeKnowledgeTest.String():          AppointmentTypeKnowledgeTest,
+	AppointmentTypeMotorcycleSkillsTest.String():   AppointmentTypeMotorcycleSkillsTest,
+	AppointmentTypePermit.String():                 AppointmentTypePermit,
 }
 
 func StringToAppointmentType(k string) AppointmentType {
@@ -96,7 +124,7 @@ func (l Location) String() string {
 	case LocationRaleighWest:
 		return "raleigh-west"
 	}
-	return ""
+	panic("unreachable: invalid Location")
 }
 
 var locationMap map[string]Location = map[string]Location{

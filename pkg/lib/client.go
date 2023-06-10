@@ -236,6 +236,8 @@ func navigateAppointmentCalendar(ctx context.Context, apptType AppointmentType) 
 	}
 
 	for {
+		// Click through all of the available days in the current month to find available
+		// appointment times.
 		times, err := navigateAppointmentCalendarDays(ctx, apptType)
 		if err != nil {
 			return nil, err
