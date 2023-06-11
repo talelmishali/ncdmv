@@ -18,8 +18,8 @@ const (
 var (
 	down           = flag.Bool("down", false, "up or down")
 	count          = flag.Int("count", 0, "number of migrations")
-	dbPathFlag     = flag.String("db_path", "./ncdmv.db", "path to SQLite DB file")
-	migrationsPath = flag.String("migrations_path", "./migrations", "path to migrations directory")
+	dbPathFlag     = flag.String("db_path", "./database/ncdmv.db", "path to SQLite DB file")
+	migrationsPath = flag.String("migrations_path", "./database/migrations", "path to migrations directory")
 )
 
 func main() {
