@@ -12,6 +12,7 @@ import (
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
 	"github.com/gtuk/discordwebhook"
+	"golang.org/x/exp/slices"
 
 	"github.com/aksiksi/ncdmv/pkg/models"
 )
@@ -56,18 +57,16 @@ func isLocationNodeEnabled(node *cdp.Node) bool {
 }
 
 type Client struct {
-	db                       *models.Queries
-	discordWebhook           string
-	stopOnFailure            bool
-	appointmentNotifications map[Appointment]bool
+	db             *models.Queries
+	discordWebhook string
+	stopOnFailure  bool
 }
 
 func NewClient(db *sql.DB, discordWebhook string, stopOnFailure bool) *Client {
 	return &Client{
-		db:                       models.New(db),
-		discordWebhook:           discordWebhook,
-		stopOnFailure:            stopOnFailure,
-		appointmentNotifications: make(map[Appointment]bool),
+		db:             models.New(db),
+		discordWebhook: discordWebhook,
+		stopOnFailure:  stopOnFailure,
 	}
 }
 
@@ -105,6 +104,9 @@ func extractAppointmentTimesForDay(ctx context.Context, apptType AppointmentType
 	// This selects options from the appointment time dropdown that match the selected appointment type.
 	optionSelector := fmt.Sprintf(`option[%s="%d"]`, appointmentTypeIDAttributeName, apptType)
 
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	var timeDropdownHtml string
 	if err := chromedp.Run(ctx,
 		// Wait for the time dropdown element to contain valid appointment time options.
@@ -113,6 +115,10 @@ func extractAppointmentTimesForDay(ctx context.Context, apptType AppointmentType
 		// Extract the HTML for the time dropdown.
 		chromedp.OuterHTML(appointmentTimeDropdownSelector, &timeDropdownHtml, chromedp.ByQuery),
 	); err != nil {
+		if ctx.Err() != nil {
+			// No valid times were found in the dropdown.
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -141,14 +147,28 @@ func extractAppointmentTimesForDay(ctx context.Context, apptType AppointmentType
 // findAvailableAppointmentDateNodeIDs finds all available dates on the location calendar page
 // for the current/selected month and returns their node IDs.
 func findAvailableAppointmentDateNodeIDs(ctx context.Context) ([]cdp.NodeID, error) {
+	// NodeIDs will block until we find at least one matching node for the selector. But, in cases where
+	// the calendar view has no clickable days, we still want to try to check the next month.
+	//
+	// To circumvent this behavior, we define a new context timeout that will be cancelled if no node is found.
+	//
+	// See: https://github.com/chromedp/chromedp/issues/379
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
 	var nodeIDs []cdp.NodeID
 	if err := chromedp.Run(ctx,
 		// Wait for the spinner to disappear.
 		chromedp.WaitNotPresent(loadingSpinnerSelector, chromedp.ByQuery),
 
 		// Find all active/clickable day nodes.
-		chromedp.NodeIDs(appointmentDayLinkSelector, &nodeIDs, chromedp.NodeEnabled, chromedp.ByQueryAll),
+		chromedp.NodeIDs(appointmentDayLinkSelector, &nodeIDs, chromedp.ByQueryAll),
 	); err != nil {
+		if ctx.Err() != nil {
+			// If the context was cancelled, it just means that no clickable date nodes were found
+			// on the page.
+			return nil, nil
+		}
 		return nil, err
 	}
 	return nodeIDs, nil
@@ -319,23 +339,19 @@ func findAvailableAppointments(ctx context.Context, apptType AppointmentType, lo
 	}
 }
 
-func (c Client) sendDiscordMessage(appointment Appointment) error {
+func (c Client) sendDiscordMessage(msg string) error {
 	if c.discordWebhook == "" {
 		// Nothing to do here.
 		return nil
 	}
 
-	// Send a notification for this appointment if we haven't already done so.
-	if !c.appointmentNotifications[appointment] {
-		username := discordWebhookUsername
-		content := fmt.Sprintf("Found appointment: %q, Book here: https://skiptheline.ncdot.gov", appointment)
-		if err := discordwebhook.SendMessage(c.discordWebhook, discordwebhook.Message{
-			Username: &username,
-			Content:  &content,
-		}); err != nil {
-			return fmt.Errorf("failed to send message to Discord webhook: %w", err)
-		}
-		c.appointmentNotifications[appointment] = true
+	username := discordWebhookUsername
+	content := fmt.Sprintf("%q\n\nBook one here: https://skiptheline.ncdot.gov", msg)
+	if err := discordwebhook.SendMessage(c.discordWebhook, discordwebhook.Message{
+		Username: &username,
+		Content:  &content,
+	}); err != nil {
+		return fmt.Errorf("failed to send message to Discord webhook: %w", err)
 	}
 
 	return nil
@@ -399,33 +415,71 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 	return appointments, nil
 }
 
-func (c Client) sendNotifications(ctx context.Context, appointmentsByID map[int64]*Appointment, discordWebhook string) error {
-	for id, appointment := range appointmentsByID {
-		// Check if we already have sent a notification for this appointment.
-		count, err := c.db.GetNotificationCountByAppointment(ctx, models.GetNotificationCountByAppointmentParams{
-			AppointmentID:  id,
-			DiscordWebhook: sql.NullString{String: c.discordWebhook, Valid: true},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to query notification for appoinment %q: %w", appointment, err)
+func (c Client) sendNotifications(ctx context.Context, appointmentModels []models.Appointment, discordWebhook string, interval time.Duration) error {
+	// We only want to send _one_ notification per day, so let's group the appointments by date.
+	appointmentsByDate := make(map[string][]models.Appointment)
+	for _, appointment := range appointmentModels {
+		y, m, d := appointment.Time.Date()
+		dateString := fmt.Sprintf("%4d-%02d-%02d", y, int(m), d)
+		appointmentsByDate[dateString] = append(appointmentsByDate[dateString], appointment)
+	}
+
+	// Send a single notification per day.
+	for date, appointments := range appointmentsByDate {
+		// Figure out which appointments on this day we haven't already sent notifications for.
+		var appointmentsToNotify []models.Appointment
+		for _, appointment := range appointments {
+			count, err := c.db.GetNotificationCountByAppointment(ctx, models.GetNotificationCountByAppointmentParams{
+				AppointmentID:  appointment.ID,
+				DiscordWebhook: sql.NullString{String: c.discordWebhook, Valid: true},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to query notification for appoinment %d: %w", appointment.ID, err)
+			}
+			if count != 0 {
+				continue
+			}
+			appointmentsToNotify = append(appointmentsToNotify, appointment)
 		}
-		if count != 0 {
-			log.Printf("Notification already sent for appoinment %q; skipping...", appointment)
+
+		if len(appointmentsToNotify) == 0 {
 			continue
 		}
 
-		// This is a new appointment, so let's send a notification and store it in the DB.
-		log.Printf("Found appointment: %q", appointment)
-		if err := c.sendDiscordMessage(*appointment); err != nil {
+		// Sort appointments by time.
+		slices.SortFunc(appointmentsToNotify, func(a, b models.Appointment) bool {
+			return a.Time.Before(b.Time)
+		})
+
+		// Construct a message for this date.
+		b := strings.Builder{}
+		for i, appointment := range appointmentsToNotify {
+			b.WriteString(appointment.Time.String())
+			if i < len(appointmentsToNotify)-1 {
+				b.WriteString(", ")
+			}
+		}
+		msg := fmt.Sprintf("Found appointment(s) on %s at the following times: %s", date, b.String())
+
+		log.Printf(msg)
+
+		// Send the Discord message.
+		if err := c.sendDiscordMessage(msg); err != nil {
 			log.Printf("Failed to send message to Discord webhook %q: %v", c.discordWebhook, err)
 			continue
 		}
-		if _, err := c.db.CreateNotification(ctx, models.CreateNotificationParams{
-			AppointmentID:  id,
-			DiscordWebhook: sql.NullString{String: discordWebhook, Valid: true},
-		}); err != nil {
-			return fmt.Errorf("failed to create notification for appoinment %q: %w", appointment, err)
+
+		// Mark all of the appointments as "notified".
+		for _, appointment := range appointmentsToNotify {
+			if _, err := c.db.CreateNotification(ctx, models.CreateNotificationParams{
+				AppointmentID:  appointment.ID,
+				DiscordWebhook: sql.NullString{String: discordWebhook, Valid: true},
+			}); err != nil {
+				return fmt.Errorf("failed to create notification for appoinment %q: %w", appointment, err)
+			}
 		}
+
+		time.Sleep(interval)
 	}
 
 	return nil
@@ -448,20 +502,31 @@ func (c Client) Start(ctx context.Context, apptType AppointmentType, locations [
 			}
 		}
 
-		appointmentsByID := make(map[int64]*Appointment, len(appointments))
+		var appointmentModels []models.Appointment
 		for _, appointment := range appointments {
-			if a, err := c.db.CreateAppointment(ctx, models.CreateAppointmentParams{
+			exists := false
+			a, err := c.db.CreateAppointment(ctx, models.CreateAppointmentParams{
 				Location: appointment.Location.String(),
 				Time:     appointment.Time,
-			}); err != nil {
-				log.Printf("Appointment %q already found", appointment)
-				continue
-			} else {
-				appointmentsByID[a.ID] = appointment
+			})
+			if err != nil {
+				log.Printf("Appointment %q already processed", appointment)
+				exists = true
 			}
+			if exists {
+				// Fetch the appointment ID from the DB.
+				a, err = c.db.GetAppointmentByLocationAndTime(ctx, models.GetAppointmentByLocationAndTimeParams{
+					Location: appointment.Location.String(),
+					Time:     appointment.Time,
+				})
+				if err != nil {
+					return fmt.Errorf("Appointment %q does not exist in DB: %w", appointment, err)
+				}
+			}
+			appointmentModels = append(appointmentModels, a)
 		}
 
-		if err := c.sendNotifications(ctx, appointmentsByID, c.discordWebhook); err != nil {
+		if err := c.sendNotifications(ctx, appointmentModels, c.discordWebhook, 1*time.Second); err != nil {
 			if !c.stopOnFailure {
 				log.Printf("Failed to send notifications: %v", err)
 			} else {

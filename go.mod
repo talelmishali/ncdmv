@@ -8,6 +8,7 @@ require (
 	github.com/chromedp/chromedp v0.9.1
 	github.com/golang-migrate/migrate/v4 v4.16.1
 	github.com/gtuk/discordwebhook v1.1.0
+	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
 	modernc.org/sqlite v1.18.0
 )
 

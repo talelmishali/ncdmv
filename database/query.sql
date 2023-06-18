@@ -2,6 +2,11 @@
 SELECT * FROM appointment
 WHERE id = ? LIMIT 1;
 
+-- name: GetAppointmentByLocationAndTime :one
+SELECT * FROM appointment
+WHERE location = ? AND time = ?
+LIMIT 1;
+
 -- name: ListAppointments :many
 SELECT * FROM appointment
 ORDER BY time DESC;

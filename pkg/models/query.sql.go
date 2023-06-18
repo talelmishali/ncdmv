@@ -90,6 +90,29 @@ func (q *Queries) GetAppointment(ctx context.Context, id int64) (Appointment, er
 	return i, err
 }
 
+const getAppointmentByLocationAndTime = `-- name: GetAppointmentByLocationAndTime :one
+SELECT id, location, time, create_timestamp FROM appointment
+WHERE location = ? AND time = ?
+LIMIT 1
+`
+
+type GetAppointmentByLocationAndTimeParams struct {
+	Location string    `json:"location"`
+	Time     time.Time `json:"time"`
+}
+
+func (q *Queries) GetAppointmentByLocationAndTime(ctx context.Context, arg GetAppointmentByLocationAndTimeParams) (Appointment, error) {
+	row := q.db.QueryRowContext(ctx, getAppointmentByLocationAndTime, arg.Location, arg.Time)
+	var i Appointment
+	err := row.Scan(
+		&i.ID,
+		&i.Location,
+		&i.Time,
+		&i.CreateTimestamp,
+	)
+	return i, err
+}
+
 const getNotificationCountByAppointment = `-- name: GetNotificationCountByAppointment :one
 SELECT COUNT(*) FROM notification
 WHERE appointment_id = ? AND discord_webhook = ?
