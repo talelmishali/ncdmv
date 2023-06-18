@@ -485,56 +485,87 @@ func (c Client) sendNotifications(ctx context.Context, appointmentModels []model
 	return nil
 }
 
-// Start runs the NC DMV client for the given locations. A search will be run for all locations based on
-// the specified interval.
-//
-// Note that this method will block indefinitely. If you want to just run a single search, use RunForLocations.
-//
-// If "stopOnFailure" is set to true for this client, this method will terminate on any error encountered.
-func (c Client) Start(ctx context.Context, apptType AppointmentType, locations []Location, timeout, interval time.Duration) error {
-	for {
-		appointments, err := c.RunForLocations(ctx, apptType, locations, timeout)
-		if err != nil {
-			if !c.stopOnFailure {
-				log.Printf("Failed to check locations: %v", err)
-			} else {
-				return fmt.Errorf("failed to check locations: %w", err)
-			}
+func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locations []Location, timeout time.Duration) error {
+	appointments, err := c.RunForLocations(ctx, apptType, locations, timeout)
+	if err != nil {
+		if !c.stopOnFailure {
+			log.Printf("Failed to check locations: %v", err)
+		} else {
+			return fmt.Errorf("failed to check locations: %w", err)
 		}
+	}
 
-		var appointmentModels []models.Appointment
-		for _, appointment := range appointments {
-			exists := false
-			a, err := c.db.CreateAppointment(ctx, models.CreateAppointmentParams{
+	var appointmentModels []models.Appointment
+	for _, appointment := range appointments {
+		exists := false
+		a, err := c.db.CreateAppointment(ctx, models.CreateAppointmentParams{
+			Location: appointment.Location.String(),
+			Time:     appointment.Time,
+		})
+		if err != nil {
+			log.Printf("Appointment %q already processed", appointment)
+			exists = true
+		}
+		if exists {
+			// Fetch the appointment ID from the DB.
+			a, err = c.db.GetAppointmentByLocationAndTime(ctx, models.GetAppointmentByLocationAndTimeParams{
 				Location: appointment.Location.String(),
 				Time:     appointment.Time,
 			})
 			if err != nil {
-				log.Printf("Appointment %q already processed", appointment)
-				exists = true
-			}
-			if exists {
-				// Fetch the appointment ID from the DB.
-				a, err = c.db.GetAppointmentByLocationAndTime(ctx, models.GetAppointmentByLocationAndTimeParams{
-					Location: appointment.Location.String(),
-					Time:     appointment.Time,
-				})
-				if err != nil {
-					return fmt.Errorf("Appointment %q does not exist in DB: %w", appointment, err)
-				}
-			}
-			appointmentModels = append(appointmentModels, a)
-		}
-
-		if err := c.sendNotifications(ctx, appointmentModels, c.discordWebhook, 1*time.Second); err != nil {
-			if !c.stopOnFailure {
-				log.Printf("Failed to send notifications: %v", err)
-			} else {
-				return fmt.Errorf("failed to send notifications: %w", err)
+				return fmt.Errorf("Appointment %q does not exist in DB: %w", appointment, err)
 			}
 		}
+		appointmentModels = append(appointmentModels, a)
+	}
 
-		log.Printf("Sleeping for %v between checks...", interval)
-		time.Sleep(interval)
+	if err := c.sendNotifications(ctx, appointmentModels, c.discordWebhook, 1*time.Second); err != nil {
+		if !c.stopOnFailure {
+			log.Printf("Failed to send notifications: %v", err)
+		} else {
+			return fmt.Errorf("failed to send notifications: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Start runs the NC DMV client for the given locations. A search will be run for all locations based on
+// the specified interval.
+//
+// Note that this method will block until the context is cancelled. If you want to just run a single search synchronously,
+// you should use RunForLocations.
+//
+// If "stopOnFailure" is set to true, this method will terminate on the first error.
+//
+// Each provided location is processed in a _separate_ Chrome browser tab. This allows for some degree of parallelism
+// as each tab can run independently of the others. The downside is that the list of locations needs to bounded based
+// on the resources available on your machine.
+func (c Client) Start(ctx context.Context, apptType AppointmentType, locations []Location, timeout, interval time.Duration) error {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+
+	tick := func() error {
+		if err := c.handleTick(ctx, apptType, locations, timeout); err != nil {
+			return err
+		}
+		log.Printf("Sleeping for %v between location checks...", interval)
+		return nil
+	}
+
+	for {
+		// Trigger a "tick" immediately as the ticker does not do so for us.
+		if err := tick(); err != nil {
+			return err
+		}
+		// Block until the next tick or the context is cancelled.
+		select {
+		case <-t.C:
+			if err := tick(); err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
