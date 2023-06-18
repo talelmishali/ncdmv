@@ -17,14 +17,8 @@ type Appointment struct {
 }
 
 type Notification struct {
-	ID                   int64     `json:"id"`
-	AppointmentID        int64     `json:"appointment_id"`
-	NotificationMethodID int64     `json:"notification_method_id"`
-	CreateTimestamp      time.Time `json:"create_timestamp"`
-}
-
-type NotificationMethod struct {
 	ID              int64          `json:"id"`
+	AppointmentID   int64          `json:"appointment_id"`
 	DiscordWebhook  sql.NullString `json:"discord_webhook"`
 	CreateTimestamp time.Time      `json:"create_timestamp"`
 }

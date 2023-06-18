@@ -7,11 +7,12 @@ package models
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
 const createAppointment = `-- name: CreateAppointment :one
-INSERT INTO appointment (
+INSERT OR IGNORE INTO appointment (
   location, time
 ) VALUES (
   ?, ?
@@ -31,6 +32,32 @@ func (q *Queries) CreateAppointment(ctx context.Context, arg CreateAppointmentPa
 		&i.ID,
 		&i.Location,
 		&i.Time,
+		&i.CreateTimestamp,
+	)
+	return i, err
+}
+
+const createNotification = `-- name: CreateNotification :one
+INSERT INTO notification (
+  appointment_id, discord_webhook
+) VALUES (
+  ?, ?
+)
+RETURNING id, appointment_id, discord_webhook, create_timestamp
+`
+
+type CreateNotificationParams struct {
+	AppointmentID  int64          `json:"appointment_id"`
+	DiscordWebhook sql.NullString `json:"discord_webhook"`
+}
+
+func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error) {
+	row := q.db.QueryRowContext(ctx, createNotification, arg.AppointmentID, arg.DiscordWebhook)
+	var i Notification
+	err := row.Scan(
+		&i.ID,
+		&i.AppointmentID,
+		&i.DiscordWebhook,
 		&i.CreateTimestamp,
 	)
 	return i, err
@@ -63,6 +90,23 @@ func (q *Queries) GetAppointment(ctx context.Context, id int64) (Appointment, er
 	return i, err
 }
 
+const getNotificationCountByAppointment = `-- name: GetNotificationCountByAppointment :one
+SELECT COUNT(*) FROM notification
+WHERE appointment_id = ? AND discord_webhook = ?
+`
+
+type GetNotificationCountByAppointmentParams struct {
+	AppointmentID  int64          `json:"appointment_id"`
+	DiscordWebhook sql.NullString `json:"discord_webhook"`
+}
+
+func (q *Queries) GetNotificationCountByAppointment(ctx context.Context, arg GetNotificationCountByAppointmentParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getNotificationCountByAppointment, arg.AppointmentID, arg.DiscordWebhook)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const listAppointments = `-- name: ListAppointments :many
 SELECT id, location, time, create_timestamp FROM appointment
 ORDER BY time DESC
@@ -81,6 +125,38 @@ func (q *Queries) ListAppointments(ctx context.Context) ([]Appointment, error) {
 			&i.ID,
 			&i.Location,
 			&i.Time,
+			&i.CreateTimestamp,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNotifications = `-- name: ListNotifications :many
+SELECT id, appointment_id, discord_webhook, create_timestamp FROM notification
+`
+
+func (q *Queries) ListNotifications(ctx context.Context) ([]Notification, error) {
+	rows, err := q.db.QueryContext(ctx, listNotifications)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Notification
+	for rows.Next() {
+		var i Notification
+		if err := rows.Scan(
+			&i.ID,
+			&i.AppointmentID,
+			&i.DiscordWebhook,
 			&i.CreateTimestamp,
 		); err != nil {
 			return nil, err
