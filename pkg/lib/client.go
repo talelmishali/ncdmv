@@ -12,6 +12,8 @@ import (
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
 	"github.com/gtuk/discordwebhook"
+
+	"github.com/aksiksi/ncdmv/pkg/models"
 )
 
 const (
@@ -54,7 +56,7 @@ func isLocationNodeEnabled(node *cdp.Node) bool {
 }
 
 type Client struct {
-	db                       *sql.DB
+	db                       *models.Queries
 	discordWebhook           string
 	stopOnFailure            bool
 	appointmentNotifications map[Appointment]bool
@@ -62,7 +64,7 @@ type Client struct {
 
 func NewClient(db *sql.DB, discordWebhook string, stopOnFailure bool) *Client {
 	return &Client{
-		db:                       db,
+		db:                       models.New(db),
 		discordWebhook:           discordWebhook,
 		stopOnFailure:            stopOnFailure,
 		appointmentNotifications: make(map[Appointment]bool),
@@ -397,6 +399,38 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 	return appointments, nil
 }
 
+func (c Client) sendNotifications(ctx context.Context, appointmentsByID map[int64]*Appointment, discordWebhook string) error {
+	for id, appointment := range appointmentsByID {
+		// Check if we already have sent a notification for this appointment.
+		count, err := c.db.GetNotificationCountByAppointment(ctx, models.GetNotificationCountByAppointmentParams{
+			AppointmentID:  id,
+			DiscordWebhook: sql.NullString{String: c.discordWebhook, Valid: true},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to query notification for appoinment %q: %w", appointment, err)
+		}
+		if count != 0 {
+			log.Printf("Notification already sent for appoinment %q; skipping...", appointment)
+			continue
+		}
+
+		// This is a new appointment, so let's send a notification and store it in the DB.
+		log.Printf("Found appointment: %q", appointment)
+		if err := c.sendDiscordMessage(*appointment); err != nil {
+			log.Printf("Failed to send message to Discord webhook %q: %v", c.discordWebhook, err)
+			continue
+		}
+		if _, err := c.db.CreateNotification(ctx, models.CreateNotificationParams{
+			AppointmentID:  id,
+			DiscordWebhook: sql.NullString{String: discordWebhook, Valid: true},
+		}); err != nil {
+			return fmt.Errorf("failed to create notification for appoinment %q: %w", appointment, err)
+		}
+	}
+
+	return nil
+}
+
 // Start runs the NC DMV client for the given locations. A search will be run for all locations based on
 // the specified interval.
 //
@@ -407,17 +441,31 @@ func (c Client) Start(ctx context.Context, apptType AppointmentType, locations [
 	for {
 		appointments, err := c.RunForLocations(ctx, apptType, locations, timeout)
 		if err != nil {
-			if c.stopOnFailure {
-				return fmt.Errorf("failed to check locations: %w", err)
-			} else {
+			if !c.stopOnFailure {
 				log.Printf("Failed to check locations: %v", err)
+			} else {
+				return fmt.Errorf("failed to check locations: %w", err)
 			}
 		}
 
+		appointmentsByID := make(map[int64]*Appointment, len(appointments))
 		for _, appointment := range appointments {
-			log.Printf("Found appointment: %q", appointment)
-			if err := c.sendDiscordMessage(*appointment); err != nil {
-				log.Printf("Failed to send message to Discord webhook %q: %v", c.discordWebhook, err)
+			if a, err := c.db.CreateAppointment(ctx, models.CreateAppointmentParams{
+				Location: appointment.Location.String(),
+				Time:     appointment.Time,
+			}); err != nil {
+				log.Printf("Appointment %q already found", appointment)
+				continue
+			} else {
+				appointmentsByID[a.ID] = appointment
+			}
+		}
+
+		if err := c.sendNotifications(ctx, appointmentsByID, c.discordWebhook); err != nil {
+			if !c.stopOnFailure {
+				log.Printf("Failed to send notifications: %v", err)
+			} else {
+				return fmt.Errorf("failed to send notifications: %w", err)
 			}
 		}
 

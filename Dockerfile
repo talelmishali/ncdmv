@@ -7,7 +7,7 @@ COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
 COPY . .
-RUN go build -v -o /usr/local/bin/ncdmv .
+RUN make install
 
 FROM chromedp/headless-shell:latest
 
@@ -16,5 +16,6 @@ RUN apt-get update; apt-get upgrade -y; apt install dumb-init -y
 ENTRYPOINT ["dumb-init", "--"]
 
 COPY --from=builder /usr/local/bin/ncdmv /usr/local/bin/ncdmv
+# COPY --from=builder /usr/src/ncdmv/database/ncdmv.db /etc/ncdmv/ncdmv.db
 ENV NCDMV_DISABLE_GPU=1
 CMD ["ncdmv"]
