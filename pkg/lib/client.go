@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -46,7 +48,8 @@ var tz = loadTimezoneUnchecked("America/New_York")
 func loadTimezoneUnchecked(tz string) *time.Location {
 	loc, err := time.LoadLocation(tz)
 	if err != nil {
-		log.Fatalf("Failed to load timezone %q: %v", tz, err)
+		slog.Error("Failed to load timezone", "tz", tz, "err", err)
+		os.Exit(1)
 	}
 	return loc
 }
@@ -135,7 +138,7 @@ func extractAppointmentTimesForDay(ctx context.Context, apptType AppointmentType
 		}
 		t, err := time.ParseInLocation(appointmentTimeFormat, dt, tz)
 		if err != nil {
-			log.Printf("Failed to parse datetime %q: %v", dt, err)
+			slog.Error("Failed to parse datetime", "dt", dt, "err", err)
 			return
 		}
 		availableTimes = append(availableTimes, t)
@@ -407,7 +410,7 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 			return nil, result.err
 		}
 		if len(result.appointments) == 0 {
-			log.Printf("Location %q has no appointments available", location)
+			slog.Info("Location has no appointments available", "location", location)
 		}
 		appointments = append(appointments, result.appointments...)
 	}
@@ -461,7 +464,7 @@ func (c Client) sendNotifications(ctx context.Context, appointmentModels []model
 		}
 		msg := fmt.Sprintf("Found appointment(s) on %s at the following times: %s", date, b.String())
 
-		log.Printf(msg)
+		slog.Info(msg)
 
 		// Send the Discord message.
 		if err := c.sendDiscordMessage(msg); err != nil {
@@ -489,7 +492,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 	appointments, err := c.RunForLocations(ctx, apptType, locations, timeout)
 	if err != nil {
 		if !c.stopOnFailure {
-			log.Printf("Failed to check locations: %v", err)
+			slog.Error("Failed to check locations", "err", err)
 		} else {
 			return fmt.Errorf("failed to check locations: %w", err)
 		}
@@ -503,7 +506,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 			Time:     appointment.Time,
 		})
 		if err != nil {
-			log.Printf("Appointment %q already processed", appointment)
+			slog.Info("Appointment already processed", "appointment", appointment)
 			exists = true
 		}
 		if exists {
@@ -521,7 +524,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 
 	if err := c.sendNotifications(ctx, appointmentModels, c.discordWebhook, 1*time.Second); err != nil {
 		if !c.stopOnFailure {
-			log.Printf("Failed to send notifications: %v", err)
+			slog.Error("Failed to send notifications", "err", err)
 		} else {
 			return fmt.Errorf("failed to send notifications: %w", err)
 		}
@@ -549,7 +552,7 @@ func (c Client) Start(ctx context.Context, apptType AppointmentType, locations [
 		if err := c.handleTick(ctx, apptType, locations, timeout); err != nil {
 			return err
 		}
-		log.Printf("Sleeping for %v between location checks...", interval)
+		slog.Info("Sleeping between location checks...", "interval", interval)
 		return nil
 	}
 

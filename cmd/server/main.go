@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/slog"
 	_ "modernc.org/sqlite"
 
 	ncdmv "github.com/aksiksi/ncdmv/pkg/lib"
@@ -59,16 +60,19 @@ func main() {
 	}
 
 	disableGpu := os.Getenv(disableGpuEnvVar) != "" || *disableGpu
+	slog.Info("GPU support", "disabled", disableGpu)
 
 	db, err := sql.Open("sqlite", *databasePath)
 	if err != nil {
 		log.Fatalf("Failed to initialize DB: %s", err)
 	}
 	defer db.Close()
+	slog.Info("Loaded DB successfully")
 
 	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON;"); err != nil {
 		log.Fatalf("Failed to enable foreign key support: %s", err)
 	}
+	slog.Info("Enabled foreign key support")
 
 	// Initialize the Chrome context and open a new window.
 	ctx, cancel, err := ncdmv.NewChromeContext(ctx, *headless, disableGpu, *debug)
@@ -76,11 +80,13 @@ func main() {
 		log.Fatalf("Failed to init Chrome context: %s", err)
 	}
 	defer cancel()
+	slog.Info("Initialized Chrome context", "headless", headless, "debug", *debug)
 
 	client := ncdmv.NewClient(db, *discordWebhook, *stopOnFailure)
 	if err != nil {
 		log.Fatalf("failed to create client: %v", err)
 	}
+	slog.Info("Created ncdmv client")
 
 	parsedTimeout := time.Duration(*timeout) * time.Second
 	parsedInterval := time.Duration(*interval) * time.Minute
