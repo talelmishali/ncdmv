@@ -4,10 +4,12 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/file"
+	"golang.org/x/exp/slog"
 )
 
 // RunMigrations runs all migrations in the given path against the provided SQLite DB.
@@ -36,26 +38,37 @@ func RunMigrations(dbPath, migrationsPath string, count int, down bool) error {
 		log.Fatal(err)
 	}
 
-	if count == 0 {
-		if !down {
-			if err := m.Up(); err != nil {
-				return fmt.Errorf("failed to run all up migrations: %w", err)
+	f := func() error {
+		if count == 0 {
+			if !down {
+				if err := m.Up(); err != nil {
+					return fmt.Errorf("failed to run all up migrations: %w", err)
+				}
+			} else {
+				if err := m.Down(); err != nil {
+					return fmt.Errorf("failed to run all down migrations: %w", err)
+				}
 			}
 		} else {
-			if err := m.Down(); err != nil {
-				return fmt.Errorf("failed to run all down migrations: %w", err)
+			if !down {
+				if err := m.Steps(count); err != nil {
+					return fmt.Errorf("failed to run %d up migrations: %w", count, err)
+				}
+			} else {
+				if err := m.Steps(count * -1); err != nil {
+					return fmt.Errorf("failed to run %d down migrations: %w", count, err)
+				}
 			}
 		}
-	} else {
-		if !down {
-			if err := m.Steps(count); err != nil {
-				return fmt.Errorf("failed to run %d up migrations: %w", count, err)
-			}
-		} else {
-			if err := m.Steps(count * -1); err != nil {
-				return fmt.Errorf("failed to run %d down migrations: %w", count, err)
-			}
+		return nil
+	}
+	if err := f(); err != nil {
+		// https://github.com/golang-migrate/migrate/issues/486#issue-767488523
+		if strings.Contains(err.Error(), "no change") {
+			slog.Info("DB schema is up-to-date")
+			return nil
 		}
+		return err
 	}
 
 	return nil

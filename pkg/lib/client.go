@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/gtuk/discordwebhook"
 	"golang.org/x/exp/slices"
+	"golang.org/x/exp/slog"
 
 	"github.com/aksiksi/ncdmv/pkg/models"
 )
@@ -547,6 +547,8 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 func (c Client) Start(ctx context.Context, apptType AppointmentType, locations []Location, timeout, interval time.Duration) error {
 	t := time.NewTicker(interval)
 	defer t.Stop()
+
+	slog.Info("Starting client", "apptType", apptType, "locations", locations, "timeout", timeout, "interval", interval)
 
 	tick := func() error {
 		if err := c.handleTick(ctx, apptType, locations, timeout); err != nil {

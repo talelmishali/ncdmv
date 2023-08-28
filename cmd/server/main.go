@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	ncdmv "github.com/aksiksi/ncdmv/pkg/lib"
+	"github.com/aksiksi/ncdmv/pkg/models"
 )
 
 const (
@@ -23,6 +24,7 @@ const (
 var (
 	apptType       = flag.String("appt_type", "permit", fmt.Sprintf("appointment type (options: %s)", strings.Join(ncdmv.ValidApptTypes(), ",")))
 	databasePath   = flag.String("database_path", "./ncdmv.db", "path to database file")
+	migrationsPath = flag.String("migrations_path", "", "path to migrations directory")
 	locations      = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to check (options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
 	discordWebhook = flag.String("discord_webhook", "", "Discord webhook URL for notifications (optional)")
 	timeout        = flag.Int("timeout", 60, "timeout, in seconds")
@@ -74,13 +76,20 @@ func main() {
 	}
 	slog.Info("Enabled foreign key support")
 
+	if *migrationsPath != "" {
+		slog.Info("Running all up migrations...", "databasePath", *databasePath, "migrationsPath", *migrationsPath)
+		if err := models.RunMigrations(*databasePath, *migrationsPath, 0 /* count */, false /* down */); err != nil {
+			log.Fatalf("Failed to run migrations: %v", err)
+		}
+	}
+
 	// Initialize the Chrome context and open a new window.
 	ctx, cancel, err := ncdmv.NewChromeContext(ctx, *headless, disableGpu, *debug)
 	if err != nil {
 		log.Fatalf("Failed to init Chrome context: %s", err)
 	}
 	defer cancel()
-	slog.Info("Initialized Chrome context", "headless", headless, "debug", *debug)
+	slog.Info("Initialized Chrome context", "headless", *headless, "debug", *debug)
 
 	client := ncdmv.NewClient(db, *discordWebhook, *stopOnFailure)
 	if err != nil {
