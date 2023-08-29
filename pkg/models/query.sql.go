@@ -242,7 +242,6 @@ const updateAppointmentAvailable = `-- name: UpdateAppointmentAvailable :exec
 UPDATE appointment
 SET available = ?
 WHERE id = ?
-LIMIT 1
 `
 
 type UpdateAppointmentAvailableParams struct {

@@ -562,11 +562,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 
 	appointments, err := c.RunForLocations(ctx, apptType, locations, timeout)
 	if err != nil {
-		if !c.stopOnFailure {
-			slog.Error("Failed to check locations", "err", err)
-		} else {
-			return fmt.Errorf("failed to check locations: %w", err)
-		}
+		return fmt.Errorf("failed to check locations: %w", err)
 	}
 
 	// TODO(aksiksi): How do we handle failures after writing appointments to DB but before writing notifications?
@@ -584,7 +580,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 			Available: true,
 		})
 		if err != nil {
-			slog.Info("Appointment already processed", "appointment", appointment)
+			slog.Debug("Appointment already processed", "location", appointment.Location.String(), "time", appointment.Time)
 			exists = true
 		}
 		if exists {
@@ -610,11 +606,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 	slog.Info("Updated appointments")
 
 	if err := c.sendNotifications(ctx, appointmentsToNotify, c.discordWebhook, 1*time.Second); err != nil {
-		if !c.stopOnFailure {
-			slog.Error("Failed to send notifications", "err", err)
-		} else {
-			return fmt.Errorf("failed to send notifications: %w", err)
-		}
+		return fmt.Errorf("failed to send notifications: %w", err)
 	}
 	slog.Info("Sent notifications successfully")
 
@@ -627,7 +619,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 // Note that this method will block until the context is cancelled. If you want to just run a single search synchronously,
 // you should use RunForLocations.
 //
-// If "stopOnFailure" is set to true, this method will terminate on the first error.
+// If stopOnFailure is set to true, this method will terminate on the first error.
 //
 // Each provided location is processed in a _separate_ Chrome browser tab. This allows for some degree of parallelism
 // as each tab can run independently of the others. The downside is that the list of locations needs to bounded based
@@ -640,7 +632,11 @@ func (c Client) Start(ctx context.Context, apptType AppointmentType, locations [
 
 	tick := func() error {
 		if err := c.handleTick(ctx, apptType, locations, timeout); err != nil {
-			return err
+			if !c.stopOnFailure {
+				slog.Error("handleTick failed", "err", err)
+			} else {
+				return err
+			}
 		}
 		slog.Info("Sleeping between location checks...", "interval", interval)
 		return nil

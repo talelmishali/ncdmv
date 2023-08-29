@@ -27,8 +27,7 @@ RETURNING *;
 -- name: UpdateAppointmentAvailable :exec
 UPDATE appointment
 SET available = ?
-WHERE id = ?
-LIMIT 1;
+WHERE id = ?;
 
 -- name: DeleteAppointment :exec
 DELETE FROM appointment
