@@ -41,6 +41,8 @@ const (
 	appointmentTypeIDAttributeName   = "data-appointmenttypeid"
 
 	appointmentTimeFormat = "1/2/2006 3:04:05 PM"
+
+	numAppointmentsPerDiscordNotification = 10
 )
 
 var tz = loadTimezoneUnchecked("America/New_York")
@@ -344,14 +346,13 @@ func findAvailableAppointments(ctx context.Context, apptType AppointmentType, lo
 	}
 }
 
-func (c Client) sendDiscordMessage(msg string) error {
+func (c Client) sendDiscordMessage(content string) error {
 	if c.discordWebhook == "" {
 		// Nothing to do here.
 		return nil
 	}
 
 	username := discordWebhookUsername
-	content := fmt.Sprintf("%q\n\nBook one here: https://skiptheline.ncdot.gov", msg)
 	if err := discordwebhook.SendMessage(c.discordWebhook, discordwebhook.Message{
 		Username: &username,
 		Content:  &content,
@@ -416,7 +417,7 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 			return nil, result.err
 		}
 		if len(result.appointments) == 0 {
-			slog.Info("Location has no appointments available", "location", location)
+			slog.Info("No appointments available", "location", location)
 		} else {
 			slog.Info("Found appointments in location", "location", location, "num_appointments", len(result.appointments))
 		}
@@ -427,50 +428,65 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 }
 
 func (c Client) sendNotifications(ctx context.Context, appointmentsToNotify []models.Appointment, discordWebhook string, interval time.Duration) error {
-	// We only want to send _one_ notification per day, so let's group the appointments by date.
-	appointmentsByDate := make(map[string][]models.Appointment)
-	for _, appointment := range appointmentsToNotify {
-		y, m, d := appointment.Time.Date()
-		dateString := fmt.Sprintf("%4d-%02d-%02d", y, int(m), d)
-		appointmentsByDate[dateString] = append(appointmentsByDate[dateString], appointment)
+	// Sort appointments by time.
+	slices.SortFunc(appointmentsToNotify, func(a, b models.Appointment) bool {
+		return a.Time.Before(b.Time)
+	})
+
+	// Group appointments by location.
+	appointmentsByLocation := make(map[string][]models.Appointment)
+	for _, a := range appointmentsToNotify {
+		appointmentsByLocation[a.Location] = append(appointmentsByLocation[a.Location], a)
 	}
 
-	// Send a single notification per day.
-	for date, appointments := range appointmentsByDate {
-		// Sort appointments by time.
-		slices.SortFunc(appointments, func(a, b models.Appointment) bool {
-			return a.Time.Before(b.Time)
-		})
+	// Sort locations by name.
+	var locations []string
+	for location := range appointmentsByLocation {
+		locations = append(locations, location)
+	}
+	slices.Sort(locations)
 
-		// Construct a message for this date.
+	for i, location := range locations {
+		appointments := appointmentsByLocation[location]
 		b := strings.Builder{}
+
+		// If this is the first location, start with a header. Later messages will just be
+		// a continuation of the first one.
+		if i == 0 {
+			if c.notifyUnavailable {
+				b.WriteString("Found appointment change(s) at the following locations and times:\n")
+			} else {
+				b.WriteString("Found available appointment(s) at the following locations and times:\n")
+			}
+		}
+
+		b.WriteString(fmt.Sprintf("\n- **%s**:\n", location))
+
+		// Construct a list bullet for each appointment change for this location.
 		for i, appointment := range appointments {
+			if i == numAppointmentsPerDiscordNotification {
+				b.WriteString("  - `(... more appointments available)`\n")
+				break
+			}
 			if appointment.Available {
-				b.WriteString(fmt.Sprintf("* **%s at %s** :white_check_mark:", appointment.Time.String(), appointment.Location))
+				b.WriteString(fmt.Sprintf("  - :white_check_mark: `%s`\n", appointment.Time.String()))
 			} else if c.notifyUnavailable {
-				b.WriteString(fmt.Sprintf("* ~~%s at %s~~ :x:", appointment.Time.String(), appointment.Location))
-			}
-			if i < len(appointments)-1 {
-				b.WriteString("\n")
+				b.WriteString(fmt.Sprintf("  - :x: `%s`\n", appointment.Time.String()))
 			}
 		}
 
-		var msg string
-		if c.notifyUnavailable {
-			msg = fmt.Sprintf("Found appointment change(s) on %s at the following times and locations:\n%s", date, b.String())
-		} else {
-			msg = fmt.Sprintf("Found available appointment(s) on %s at the following times and locations:\n%s", date, b.String())
+		if i == len(locations)-1 {
+			// The last message includes a link to the NCDMV appointment page.
+			b.WriteString("\nBook an appointment here: https://skiptheline.ncdot.gov")
 		}
-
-		slog.Info(msg)
 
 		// Send the Discord message.
-		if err := c.sendDiscordMessage(msg); err != nil {
+		if err := c.sendDiscordMessage(b.String()); err != nil {
 			log.Printf("Failed to send message to Discord webhook %q: %v", c.discordWebhook, err)
 			continue
 		}
 
-		// Mark all of the appointments as "notified".
+		// Mark all of the appointments in the batch as "notified".
 		for _, appointment := range appointments {
 			if _, err := c.db.CreateNotification(ctx, models.CreateNotificationParams{
 				AppointmentID:  appointment.ID,
@@ -538,7 +554,11 @@ func (c Client) updateAppointments(ctx context.Context, appointmentsToUpdate []m
 }
 
 func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locations []Location, timeout time.Duration) error {
-	startTime := time.Now()
+	existingAppointments, err := c.db.ListAppointmentsAfterDate(ctx, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to list appointments after current time: %w", err)
+	}
+	slog.Info("Listed existing appointments", "count", len(existingAppointments))
 
 	appointments, err := c.RunForLocations(ctx, apptType, locations, timeout)
 	if err != nil {
@@ -549,6 +569,12 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 		}
 	}
 
+	// TODO(aksiksi): How do we handle failures after writing appointments to DB but before writing notifications?
+	//
+	// One idea is to keep track of the last update time for an appointment and check if a notification exists
+	// that was sent _after_ that time.
+	//
+	// Currently, if this happens, we'd end up never notifying as the appointments were written to the DB.
 	var newAppointments []models.Appointment
 	for _, appointment := range appointments {
 		exists := false
@@ -575,16 +601,13 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 		newAppointments = append(newAppointments, a)
 	}
 
-	existingAppointments, err := c.db.ListAppointmentsAfterDate(ctx, startTime)
-	if err != nil {
-		return fmt.Errorf("failed to list appointments after current time: %w", err)
-	}
-
 	appointmentsToUpdate, appointmentsToNotify := findAppointmentsToUpdateAndNotify(newAppointments, existingAppointments)
+	slog.Info("Found appointments to update and notify", "to_update", len(appointmentsToUpdate), "to_notify", len(appointmentsToNotify))
 
 	if err := c.updateAppointments(ctx, appointmentsToUpdate); err != nil {
 		return fmt.Errorf("failed to update existing appointments: %w", err)
 	}
+	slog.Info("Updated appointments")
 
 	if err := c.sendNotifications(ctx, appointmentsToNotify, c.discordWebhook, 1*time.Second); err != nil {
 		if !c.stopOnFailure {
@@ -593,6 +616,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 			return fmt.Errorf("failed to send notifications: %w", err)
 		}
 	}
+	slog.Info("Sent notifications successfully")
 
 	return nil
 }
@@ -612,7 +636,7 @@ func (c Client) Start(ctx context.Context, apptType AppointmentType, locations [
 	t := time.NewTicker(interval)
 	defer t.Stop()
 
-	slog.Info("Starting client", "apptType", apptType, "locations", locations, "timeout", timeout, "interval", interval)
+	slog.Info("Starting client", "appt_type", apptType, "locations", locations, "timeout", timeout, "interval", interval)
 
 	tick := func() error {
 		if err := c.handleTick(ctx, apptType, locations, timeout); err != nil {

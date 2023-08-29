@@ -27,7 +27,7 @@ var (
 	migrationsPath    = flag.String("migrations_path", "", "path to migrations directory")
 	locations         = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to check (options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
 	discordWebhook    = flag.String("discord_webhook", "", "Discord webhook URL for notifications (optional)")
-	timeout           = flag.Int("timeout", 60, "timeout, in seconds")
+	timeout           = flag.Int("timeout", 120, "timeout, in seconds")
 	stopOnFailure     = flag.Bool("stop_on_failure", false, "if true, stop completely on a failure instead of just logging")
 	notifyUnavailable = flag.Bool("notify_unavailable", true, "if true, notify when a previously available appointment becomes unavailable")
 	interval          = flag.Int("interval", 30, "interval between checks, in minutes")
@@ -96,7 +96,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create client: %v", err)
 	}
-	slog.Info("Created ncdmv client")
 
 	parsedTimeout := time.Duration(*timeout) * time.Second
 	parsedInterval := time.Duration(*interval) * time.Minute
