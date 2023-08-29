@@ -373,10 +373,12 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 	// Setup a seperate tab context for each location. The tabs will be closed when this function
 	// returns.
 	var locationCtxs []context.Context
+	var locationCtxCancels []context.CancelFunc
 	for range locations {
 		ctx, cancel := chromedp.NewContext(ctx)
 		defer cancel()
 		locationCtxs = append(locationCtxs, ctx)
+		locationCtxCancels = append(locationCtxCancels, cancel)
 	}
 
 	type locationResult struct {
@@ -386,19 +388,21 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 	}
 	resultChan := make(chan locationResult)
 
-	// Spawn a goroutine for each location. Each locations is processed in a separate
-	// browser tab.
+	// Spawn a goroutine for each location. Each location is processed in a separate
+	// browser tab. Once processing completes for a location, its tab will be closed.
 	for i, location := range locations {
-		i := i
-		location := location
-		ctx := locationCtxs[i]
+		i, location := i, location
+		ctx, cancel := locationCtxs[i], locationCtxCancels[i]
 		go func() {
+			slog.Debug("Starting to process location...", "location", location)
 			appointments, err := findAvailableAppointments(ctx, apptType, location)
 			resultChan <- locationResult{
 				idx:          i,
 				appointments: appointments,
 				err:          err,
 			}
+			// Cancelling the context closes the tab for the given location.
+			cancel()
 		}()
 	}
 
@@ -413,6 +417,8 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 		}
 		if len(result.appointments) == 0 {
 			slog.Info("Location has no appointments available", "location", location)
+		} else {
+			slog.Info("Found appointments in location", "location", location, "num_appointments", len(result.appointments))
 		}
 		appointments = append(appointments, result.appointments...)
 	}
