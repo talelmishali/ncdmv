@@ -60,16 +60,18 @@ func isLocationNodeEnabled(node *cdp.Node) bool {
 }
 
 type Client struct {
-	db             *models.Queries
-	discordWebhook string
-	stopOnFailure  bool
+	db                *models.Queries
+	discordWebhook    string
+	stopOnFailure     bool
+	notifyUnavailable bool
 }
 
-func NewClient(db *sql.DB, discordWebhook string, stopOnFailure bool) *Client {
+func NewClient(db *sql.DB, discordWebhook string, stopOnFailure, notifyUnavailable bool) *Client {
 	return &Client{
-		db:             models.New(db),
-		discordWebhook: discordWebhook,
-		stopOnFailure:  stopOnFailure,
+		db:                models.New(db),
+		discordWebhook:    discordWebhook,
+		stopOnFailure:     stopOnFailure,
+		notifyUnavailable: notifyUnavailable,
 	}
 }
 
@@ -418,10 +420,10 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 	return appointments, nil
 }
 
-func (c Client) sendNotifications(ctx context.Context, appointmentModels []models.Appointment, discordWebhook string, interval time.Duration) error {
+func (c Client) sendNotifications(ctx context.Context, appointmentsToNotify []models.Appointment, discordWebhook string, interval time.Duration) error {
 	// We only want to send _one_ notification per day, so let's group the appointments by date.
 	appointmentsByDate := make(map[string][]models.Appointment)
-	for _, appointment := range appointmentModels {
+	for _, appointment := range appointmentsToNotify {
 		y, m, d := appointment.Time.Date()
 		dateString := fmt.Sprintf("%4d-%02d-%02d", y, int(m), d)
 		appointmentsByDate[dateString] = append(appointmentsByDate[dateString], appointment)
@@ -429,40 +431,30 @@ func (c Client) sendNotifications(ctx context.Context, appointmentModels []model
 
 	// Send a single notification per day.
 	for date, appointments := range appointmentsByDate {
-		// Figure out which appointments on this day we haven't already sent notifications for.
-		var appointmentsToNotify []models.Appointment
-		for _, appointment := range appointments {
-			count, err := c.db.GetNotificationCountByAppointment(ctx, models.GetNotificationCountByAppointmentParams{
-				AppointmentID:  appointment.ID,
-				DiscordWebhook: sql.NullString{String: c.discordWebhook, Valid: true},
-			})
-			if err != nil {
-				return fmt.Errorf("failed to query notification for appoinment %d: %w", appointment.ID, err)
-			}
-			if count != 0 {
-				continue
-			}
-			appointmentsToNotify = append(appointmentsToNotify, appointment)
-		}
-
-		if len(appointmentsToNotify) == 0 {
-			continue
-		}
-
 		// Sort appointments by time.
-		slices.SortFunc(appointmentsToNotify, func(a, b models.Appointment) bool {
+		slices.SortFunc(appointments, func(a, b models.Appointment) bool {
 			return a.Time.Before(b.Time)
 		})
 
 		// Construct a message for this date.
 		b := strings.Builder{}
-		for i, appointment := range appointmentsToNotify {
-			b.WriteString(appointment.Time.String())
-			if i < len(appointmentsToNotify)-1 {
-				b.WriteString(", ")
+		for i, appointment := range appointments {
+			if appointment.Available {
+				b.WriteString(fmt.Sprintf("* **%s at %s** :white_check_mark:", appointment.Time.String(), appointment.Location))
+			} else if c.notifyUnavailable {
+				b.WriteString(fmt.Sprintf("* ~~%s at %s~~ :x:", appointment.Time.String(), appointment.Location))
+			}
+			if i < len(appointments)-1 {
+				b.WriteString("\n")
 			}
 		}
-		msg := fmt.Sprintf("Found appointment(s) on %s at the following times: %s", date, b.String())
+
+		var msg string
+		if c.notifyUnavailable {
+			msg = fmt.Sprintf("Found appointment change(s) on %s at the following times and locations:\n%s", date, b.String())
+		} else {
+			msg = fmt.Sprintf("Found available appointment(s) on %s at the following times and locations:\n%s", date, b.String())
+		}
 
 		slog.Info(msg)
 
@@ -473,12 +465,13 @@ func (c Client) sendNotifications(ctx context.Context, appointmentModels []model
 		}
 
 		// Mark all of the appointments as "notified".
-		for _, appointment := range appointmentsToNotify {
+		for _, appointment := range appointments {
 			if _, err := c.db.CreateNotification(ctx, models.CreateNotificationParams{
 				AppointmentID:  appointment.ID,
 				DiscordWebhook: sql.NullString{String: discordWebhook, Valid: true},
+				Available:      appointment.Available,
 			}); err != nil {
-				return fmt.Errorf("failed to create notification for appoinment %q: %w", appointment, err)
+				return fmt.Errorf("failed to create notification for appointment %v: %w", appointment, err)
 			}
 		}
 
@@ -488,7 +481,59 @@ func (c Client) sendNotifications(ctx context.Context, appointmentModels []model
 	return nil
 }
 
+func findAppointmentsToUpdateAndNotify(new, existing []models.Appointment) (toUpdate, toNotify []models.Appointment) {
+	newAppointments := make(map[ /* ID */ int64]models.Appointment)
+	existingAppointments := make(map[ /* ID */ int64]models.Appointment)
+	for _, a := range new {
+		newAppointments[a.ID] = a
+	}
+	for _, a := range existing {
+		existingAppointments[a.ID] = a
+	}
+
+	// Find appointments that are either new or were previously unavailable.
+	for id, newAppt := range newAppointments {
+		existingAppt, ok := existingAppointments[id]
+		if !ok {
+			// Notify on new appointments.
+			toNotify = append(toNotify, newAppt)
+			continue
+		}
+		if newAppt.Available != existingAppt.Available {
+			// Notify and update appointments with an availability change.
+			toNotify = append(toNotify, newAppt)
+			toUpdate = append(toUpdate, newAppt)
+		}
+	}
+
+	// Find appointments that are now (implicitly) unavailable.
+	for id, existingAppt := range existingAppointments {
+		_, ok := newAppointments[id]
+		if !ok && existingAppt.Available {
+			existingAppt.Available = false
+			toNotify = append(toNotify, existingAppt)
+			toUpdate = append(toUpdate, existingAppt)
+		}
+	}
+
+	return toUpdate, toNotify
+}
+
+func (c Client) updateAppointments(ctx context.Context, appointmentsToUpdate []models.Appointment) error {
+	for _, appt := range appointmentsToUpdate {
+		if err := c.db.UpdateAppointmentAvailable(ctx, models.UpdateAppointmentAvailableParams{
+			ID:        appt.ID,
+			Available: appt.Available,
+		}); err != nil {
+			return fmt.Errorf("failed to update appointment %d: %w", appt.ID, err)
+		}
+	}
+	return nil
+}
+
 func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locations []Location, timeout time.Duration) error {
+	startTime := time.Now()
+
 	appointments, err := c.RunForLocations(ctx, apptType, locations, timeout)
 	if err != nil {
 		if !c.stopOnFailure {
@@ -498,12 +543,13 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 		}
 	}
 
-	var appointmentModels []models.Appointment
+	var newAppointments []models.Appointment
 	for _, appointment := range appointments {
 		exists := false
 		a, err := c.db.CreateAppointment(ctx, models.CreateAppointmentParams{
-			Location: appointment.Location.String(),
-			Time:     appointment.Time,
+			Location:  appointment.Location.String(),
+			Time:      appointment.Time,
+			Available: true,
 		})
 		if err != nil {
 			slog.Info("Appointment already processed", "appointment", appointment)
@@ -516,13 +562,25 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 				Time:     appointment.Time,
 			})
 			if err != nil {
-				return fmt.Errorf("Appointment %q does not exist in DB: %w", appointment, err)
+				return fmt.Errorf("appointment %q does not exist in DB: %w", appointment, err)
 			}
+			a.Available = true
 		}
-		appointmentModels = append(appointmentModels, a)
+		newAppointments = append(newAppointments, a)
 	}
 
-	if err := c.sendNotifications(ctx, appointmentModels, c.discordWebhook, 1*time.Second); err != nil {
+	existingAppointments, err := c.db.ListAppointmentsAfterDate(ctx, startTime)
+	if err != nil {
+		return fmt.Errorf("failed to list appointments after current time: %w", err)
+	}
+
+	appointmentsToUpdate, appointmentsToNotify := findAppointmentsToUpdateAndNotify(newAppointments, existingAppointments)
+
+	if err := c.updateAppointments(ctx, appointmentsToUpdate); err != nil {
+		return fmt.Errorf("failed to update existing appointments: %w", err)
+	}
+
+	if err := c.sendNotifications(ctx, appointmentsToNotify, c.discordWebhook, 1*time.Second); err != nil {
 		if !c.stopOnFailure {
 			slog.Error("Failed to send notifications", "err", err)
 		} else {

@@ -11,13 +11,24 @@ LIMIT 1;
 SELECT * FROM appointment
 ORDER BY time DESC;
 
+-- name: ListAppointmentsAfterDate :many
+SELECT * FROM appointment
+WHERE time >= ?
+ORDER BY time DESC;
+
 -- name: CreateAppointment :one
 INSERT OR IGNORE INTO appointment (
-  location, time
+  location, time, available
 ) VALUES (
-  ?, ?
+  ?, ?, ?
 )
 RETURNING *;
+
+-- name: UpdateAppointmentAvailable :exec
+UPDATE appointment
+SET available = ?
+WHERE id = ?
+LIMIT 1;
 
 -- name: DeleteAppointment :exec
 DELETE FROM appointment
@@ -28,9 +39,9 @@ SELECT * FROM notification;
 
 -- name: CreateNotification :one
 INSERT INTO notification (
-  appointment_id, discord_webhook
+  appointment_id, discord_webhook, available
 ) VALUES (
-  ?, ?
+  ?, ?, ?
 )
 RETURNING *;
 

@@ -22,17 +22,18 @@ const (
 )
 
 var (
-	apptType       = flag.String("appt_type", "permit", fmt.Sprintf("appointment type (options: %s)", strings.Join(ncdmv.ValidApptTypes(), ",")))
-	databasePath   = flag.String("database_path", "./ncdmv.db", "path to database file")
-	migrationsPath = flag.String("migrations_path", "", "path to migrations directory")
-	locations      = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to check (options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
-	discordWebhook = flag.String("discord_webhook", "", "Discord webhook URL for notifications (optional)")
-	timeout        = flag.Int("timeout", 60, "timeout, in seconds")
-	stopOnFailure  = flag.Bool("stop_on_failure", false, "if true, stop completely on a failure instead of just logging")
-	interval       = flag.Int("interval", 30, "interval between checks, in minutes")
-	debug          = flag.Bool("debug", false, "enable debug mode")
-	headless       = flag.Bool("headless", true, "enable headless browser")
-	disableGpu     = flag.Bool("disable_gpu", false, "disable GPU")
+	apptType          = flag.String("appt_type", "permit", fmt.Sprintf("appointment type (options: %s)", strings.Join(ncdmv.ValidApptTypes(), ",")))
+	databasePath      = flag.String("database_path", "./ncdmv.db", "path to database file")
+	migrationsPath    = flag.String("migrations_path", "", "path to migrations directory")
+	locations         = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to check (options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
+	discordWebhook    = flag.String("discord_webhook", "", "Discord webhook URL for notifications (optional)")
+	timeout           = flag.Int("timeout", 60, "timeout, in seconds")
+	stopOnFailure     = flag.Bool("stop_on_failure", false, "if true, stop completely on a failure instead of just logging")
+	notifyUnavailable = flag.Bool("notify_unavailable", true, "if true, notify when a previously available appointment becomes unavailable")
+	interval          = flag.Int("interval", 30, "interval between checks, in minutes")
+	debug             = flag.Bool("debug", false, "enable debug mode")
+	headless          = flag.Bool("headless", true, "enable headless browser")
+	disableGpu        = flag.Bool("disable_gpu", false, "disable GPU")
 )
 
 func main() {
@@ -91,7 +92,7 @@ func main() {
 	defer cancel()
 	slog.Info("Initialized Chrome context", "headless", *headless, "debug", *debug)
 
-	client := ncdmv.NewClient(db, *discordWebhook, *stopOnFailure)
+	client := ncdmv.NewClient(db, *discordWebhook, *stopOnFailure, *notifyUnavailable)
 	if err != nil {
 		log.Fatalf("failed to create client: %v", err)
 	}
