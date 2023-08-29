@@ -514,22 +514,30 @@ func findAppointmentsToUpdateAndNotify(new, existing []models.Appointment) (toUp
 	}
 
 	// Find appointments that are either new or were previously unavailable.
+	newLocations := make(map[string]bool)
 	for id, newAppt := range newAppointments {
+		newLocations[newAppt.Location] = true
+
+		// Notify on new appointments.
 		existingAppt, ok := existingAppointments[id]
 		if !ok {
-			// Notify on new appointments.
 			toNotify = append(toNotify, newAppt)
 			continue
 		}
+
+		// Notify and update appointments with an availability change.
 		if newAppt.Available != existingAppt.Available {
-			// Notify and update appointments with an availability change.
 			toNotify = append(toNotify, newAppt)
 			toUpdate = append(toUpdate, newAppt)
 		}
 	}
 
-	// Find appointments that are now (implicitly) unavailable.
+	// Find appointments that are now (implicitly) unavailable for known locations.
 	for id, existingAppt := range existingAppointments {
+		if !newLocations[existingAppt.Location] {
+			// Unknown location.
+			continue
+		}
 		_, ok := newAppointments[id]
 		if !ok && existingAppt.Available {
 			existingAppt.Available = false
@@ -562,7 +570,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 		return fmt.Errorf("failed to delete appointments before current time (%v): %w", now, err)
 	}
 	if len(rows) > 0 {
-		slog.Info("Pruned invalid appointments", len(rows))
+		slog.Info("Pruned invalid appointments", "count", len(rows))
 	}
 
 	existingAppointments, err := c.db.ListAppointmentsAfterDate(ctx, now)
