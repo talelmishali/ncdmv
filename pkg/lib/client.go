@@ -554,9 +554,20 @@ func (c Client) updateAppointments(ctx context.Context, appointmentsToUpdate []m
 }
 
 func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locations []Location, timeout time.Duration) error {
-	existingAppointments, err := c.db.ListAppointmentsAfterDate(ctx, time.Now())
+	now := time.Now()
+
+	// Prune all invalid appointments - i.e., those that are in the past.
+	rows, err := c.db.DeleteAppointmentsBeforeDate(ctx, now)
 	if err != nil {
-		return fmt.Errorf("failed to list appointments after current time: %w", err)
+		return fmt.Errorf("failed to delete appointments before current time (%v): %w", now, err)
+	}
+	if len(rows) > 0 {
+		slog.Info("Pruned invalid appointments", len(rows))
+	}
+
+	existingAppointments, err := c.db.ListAppointmentsAfterDate(ctx, now)
+	if err != nil {
+		return fmt.Errorf("failed to list appointments after current time (%v): %w", now, err)
 	}
 	slog.Info("Listed existing appointments", "count", len(existingAppointments))
 

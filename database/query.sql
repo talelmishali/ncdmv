@@ -33,6 +33,11 @@ WHERE id = ?;
 DELETE FROM appointment
 WHERE id = ?;
 
+-- name: DeleteAppointmentsBeforeDate :many
+DELETE FROM appointment
+WHERE time < ?
+RETURNING *;
+
 -- name: ListNotifications :many
 SELECT * FROM notification;
 
