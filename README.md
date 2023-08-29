@@ -2,7 +2,7 @@
 
 Monitor NCDMV for new appointment slots and get notified through Discord.
 
-<img src="https://i.imgur.com/pW9Vxio.png" alt="Discord message example" width="30%"/>
+<img src="https://i.imgur.com/pW9Vxio.png" alt="Discord message example" width="75%"/>
 
 ### Usage
 
