@@ -1,28 +1,38 @@
 ## ncdmv
 
+Monitor NCDMV for new appointment slots and get notified through Discord.
+
+<img src="https://i.imgur.com/pW9Vxio.png" alt="Discord message example" width="30%"/>
+
 ### Usage
 
 ```
-$ go run . -h
+$ go run ./cmd/server -h
 Usage of ncdmv:
   -appt_type string
-        appointment type (one of: license,license-duplicate,license-renewal,permit) (default "permit")
+        appointment type (options: permit,driver-license,driver-license-duplicate,driver-license-renewal,id-card,knowledge-test,motorcycle-skills-test) (default "permit")
+  -database_path string
+        path to database file (default "./ncdmv.db")
   -debug
         enable debug mode
   -disable_gpu
-        if true, disable GPU
+        disable GPU
   -discord_webhook string
-        Discord webhook URL for notifications
+        Discord webhook URL for notifications (optional)
   -headless
         enable headless browser (default true)
   -interval int
-        interval between checks (minutes) (default 3)
+        interval between checks, in minutes (default 30)
   -locations string
-        comma-seperated list of locations to check (valid options: ahoskie,durham-south,hillsborough,raleigh-east,raleigh-west,cary,durham-east,fuquay-varina,garner,raleigh-north) (default "cary,durham-east,durham-south")
+        comma-seperated list of locations to check (options: durham-south,hillsborough,raleigh-east,raleigh-north,ahoskie,durham-east,fuquay-varina,garner,raleigh-west,cary) (default "cary,durham-east,durham-south")
+  -migrations_path string
+        path to migrations directory
+  -notify_unavailable
+        if true, notify when a previously available appointment becomes unavailable (default true)
   -stop_on_failure
         if true, stop completely on a failure instead of just logging
   -timeout int
-        timeout (seconds) (default 60)
+        timeout, in seconds (default 120)
 ```
 
 ### Examples
@@ -30,13 +40,13 @@ Usage of ncdmv:
 Run in headless mode:
 
 ```
-go run . -locations=cary,durham-east,durham-south -discord_webhook=[WEBHOOK]
+go run ./cmd/server -locations=cary,durham-east,durham-south -discord_webhook=[WEBHOOK]
 ```
 
 Show the browser with a timeout of 2 minutes each check (across all locations) and an interval of 10 minutes:
 
 ```
-go run . -headless=false -locations=cary,durham-east,durham-south -discord_webhook=[WEBHOOK] -timeout=120 -interval=10
+go run ./cmd/server -headless=false -locations=cary,durham-east,durham-south -discord_webhook=[WEBHOOK] -timeout=120 -interval=10
 ```
 
 Run on Docker:
