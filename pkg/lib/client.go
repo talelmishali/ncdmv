@@ -43,6 +43,8 @@ const (
 	appointmentTimeFormat = "1/2/2006 3:04:05 PM"
 
 	numAppointmentsPerDiscordNotification = 10
+
+	temporaryErrString = "Could not find node with given id"
 )
 
 var tz = loadTimezoneUnchecked("America/New_York")
@@ -650,15 +652,20 @@ func (c Client) Start(ctx context.Context, apptType AppointmentType, locations [
 	slog.Info("Starting client", "appt_type", apptType, "locations", locations, "timeout", timeout, "interval", interval)
 
 	tick := func() error {
-		if err := c.handleTick(ctx, apptType, locations, timeout); err != nil {
-			if !c.stopOnFailure {
+		defer slog.Info("Sleeping between location checks...", "interval", interval)
+		for {
+			if err := c.handleTick(ctx, apptType, locations, timeout); err != nil {
+				if strings.Contains(err.Error(), temporaryErrString) {
+					slog.Warn("handleTick failed with temporary error; retrying tick...")
+					continue
+				}
 				slog.Error("handleTick failed", "err", err)
-			} else {
-				return err
+				if c.stopOnFailure {
+					return err
+				}
 			}
+			return nil
 		}
-		slog.Info("Sleeping between location checks...", "interval", interval)
-		return nil
 	}
 
 	for {
