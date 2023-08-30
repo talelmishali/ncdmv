@@ -624,12 +624,16 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 	if err := c.updateAppointments(ctx, appointmentsToUpdate); err != nil {
 		return fmt.Errorf("failed to update existing appointments: %w", err)
 	}
-	slog.Info("Updated appointments")
+	if len(appointmentsToUpdate) > 0 {
+		slog.Info("Updated appointments successfully", "count", len(appointmentsToUpdate))
+	}
 
 	if err := c.sendNotifications(ctx, appointmentsToNotify, c.discordWebhook, 1*time.Second); err != nil {
 		return fmt.Errorf("failed to send notifications: %w", err)
 	}
-	slog.Info("Sent notifications successfully")
+	if len(appointmentsToNotify) > 0 {
+		slog.Info("Sent notifications successfully", "count", len(appointmentsToNotify))
+	}
 
 	return nil
 }
