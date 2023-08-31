@@ -1,5 +1,7 @@
 -- BEGIN;
 
+PRAGMA foreign_keys=ON;
+
 CREATE TABLE appointment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     location TEXT NOT NULL,
@@ -11,7 +13,7 @@ CREATE TABLE appointment (
 
 CREATE TABLE notification (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    appointment_id INTEGER REFERENCES appointment(id) NOT NULL,
+    appointment_id INTEGER REFERENCES appointment(id) ON DELETE CASCADE NOT NULL,
     discord_webhook TEXT,
     available BOOL NOT NULL,
     create_timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP

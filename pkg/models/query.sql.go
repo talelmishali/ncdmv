@@ -77,41 +77,6 @@ func (q *Queries) DeleteAppointment(ctx context.Context, id int64) error {
 	return err
 }
 
-const deleteAppointmentsBeforeDate = `-- name: DeleteAppointmentsBeforeDate :many
-DELETE FROM appointment
-WHERE time < ?
-RETURNING id, location, time, available, create_timestamp
-`
-
-func (q *Queries) DeleteAppointmentsBeforeDate(ctx context.Context, argTime time.Time) ([]Appointment, error) {
-	rows, err := q.db.QueryContext(ctx, deleteAppointmentsBeforeDate, argTime)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Appointment
-	for rows.Next() {
-		var i Appointment
-		if err := rows.Scan(
-			&i.ID,
-			&i.Location,
-			&i.Time,
-			&i.Available,
-			&i.CreateTimestamp,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getAppointment = `-- name: GetAppointment :one
 SELECT id, location, time, available, create_timestamp FROM appointment
 WHERE id = ? LIMIT 1
@@ -257,6 +222,42 @@ func (q *Queries) ListNotifications(ctx context.Context) ([]Notification, error)
 			&i.ID,
 			&i.AppointmentID,
 			&i.DiscordWebhook,
+			&i.Available,
+			&i.CreateTimestamp,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pruneAppointmentsBeforeDate = `-- name: PruneAppointmentsBeforeDate :many
+UPDATE appointment
+SET available = false
+WHERE time < ?
+RETURNING id, location, time, available, create_timestamp
+`
+
+func (q *Queries) PruneAppointmentsBeforeDate(ctx context.Context, argTime time.Time) ([]Appointment, error) {
+	rows, err := q.db.QueryContext(ctx, pruneAppointmentsBeforeDate, argTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Appointment
+	for rows.Next() {
+		var i Appointment
+		if err := rows.Scan(
+			&i.ID,
+			&i.Location,
+			&i.Time,
 			&i.Available,
 			&i.CreateTimestamp,
 		); err != nil {

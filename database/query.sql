@@ -33,8 +33,9 @@ WHERE id = ?;
 DELETE FROM appointment
 WHERE id = ?;
 
--- name: DeleteAppointmentsBeforeDate :many
-DELETE FROM appointment
+-- name: PruneAppointmentsBeforeDate :many
+UPDATE appointment
+SET available = false
 WHERE time < ?
 RETURNING *;
 

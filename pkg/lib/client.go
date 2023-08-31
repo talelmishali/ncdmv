@@ -566,8 +566,8 @@ func (c Client) updateAppointments(ctx context.Context, appointmentsToUpdate []m
 func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locations []Location, timeout time.Duration) error {
 	now := time.Now()
 
-	// Prune all invalid appointments - i.e., those that are in the past.
-	rows, err := c.db.DeleteAppointmentsBeforeDate(ctx, now)
+	// Prune all invalid appointments (i.e., those that are in the past) by setting them as unavailable.
+	rows, err := c.db.PruneAppointmentsBeforeDate(ctx, now)
 	if err != nil {
 		return fmt.Errorf("failed to delete appointments before current time (%v): %w", now, err)
 	}
