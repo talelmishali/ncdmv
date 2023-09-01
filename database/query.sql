@@ -36,7 +36,7 @@ WHERE id = ?;
 -- name: PruneAppointmentsBeforeDate :many
 UPDATE appointment
 SET available = false
-WHERE time < ?
+WHERE time < ? AND available = true
 RETURNING *;
 
 -- name: ListNotifications :many

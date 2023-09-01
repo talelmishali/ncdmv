@@ -241,7 +241,7 @@ func (q *Queries) ListNotifications(ctx context.Context) ([]Notification, error)
 const pruneAppointmentsBeforeDate = `-- name: PruneAppointmentsBeforeDate :many
 UPDATE appointment
 SET available = false
-WHERE time < ?
+WHERE time < ? AND available = true
 RETURNING id, location, time, available, create_timestamp
 `
 
