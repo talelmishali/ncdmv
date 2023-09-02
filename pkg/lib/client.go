@@ -505,7 +505,7 @@ func (c Client) sendNotifications(ctx context.Context, appointmentsToNotify []mo
 	return nil
 }
 
-func findAppointmentsToUpdateAndNotify(new, existing []models.Appointment) (toUpdate, toNotify []models.Appointment) {
+func findAppointmentsToUpdateAndNotify(new, existing []models.Appointment, locations []Location) (toUpdate, toNotify []models.Appointment) {
 	newAppointments := make(map[ /* ID */ int64]models.Appointment)
 	existingAppointments := make(map[ /* ID */ int64]models.Appointment)
 	for _, a := range new {
@@ -516,35 +516,35 @@ func findAppointmentsToUpdateAndNotify(new, existing []models.Appointment) (toUp
 	}
 
 	// Find appointments that are either new or were previously unavailable.
-	newLocations := make(map[string]bool)
-	for id, newAppt := range newAppointments {
-		newLocations[newAppt.Location] = true
-
+	for id, appt := range newAppointments {
 		// Notify on new appointments.
 		existingAppt, ok := existingAppointments[id]
 		if !ok {
-			toNotify = append(toNotify, newAppt)
+			toNotify = append(toNotify, appt)
 			continue
 		}
 
 		// Notify and update appointments with an availability change.
-		if newAppt.Available != existingAppt.Available {
-			toNotify = append(toNotify, newAppt)
-			toUpdate = append(toUpdate, newAppt)
+		if appt.Available != existingAppt.Available {
+			toNotify = append(toNotify, appt)
+			toUpdate = append(toUpdate, appt)
 		}
 	}
 
-	// Find appointments that are now (implicitly) unavailable for known locations.
-	for id, existingAppt := range existingAppointments {
-		if !newLocations[existingAppt.Location] {
-			// Unknown location.
+	// Find appointments that are now (implicitly) unavailable for locations that the user is
+	// interested in.
+	for id, appt := range existingAppointments {
+		isLocationTracked := slices.ContainsFunc(locations, func(l Location) bool {
+			return appt.Location == l.String()
+		})
+		if !isLocationTracked {
 			continue
 		}
 		_, ok := newAppointments[id]
-		if !ok && existingAppt.Available {
-			existingAppt.Available = false
-			toNotify = append(toNotify, existingAppt)
-			toUpdate = append(toUpdate, existingAppt)
+		if !ok && appt.Available {
+			appt.Available = false
+			toNotify = append(toNotify, appt)
+			toUpdate = append(toUpdate, appt)
 		}
 	}
 
@@ -618,7 +618,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 		newAppointments = append(newAppointments, a)
 	}
 
-	appointmentsToUpdate, appointmentsToNotify := findAppointmentsToUpdateAndNotify(newAppointments, existingAppointments)
+	appointmentsToUpdate, appointmentsToNotify := findAppointmentsToUpdateAndNotify(newAppointments, existingAppointments, locations)
 	slog.Info("Found appointments to update and notify", "to_update", len(appointmentsToUpdate), "to_notify", len(appointmentsToNotify))
 
 	if err := c.updateAppointments(ctx, appointmentsToUpdate); err != nil {
