@@ -20,6 +20,7 @@ var (
 )
 
 func main() {
+	flag.Parse()
 	dbPath := os.Getenv(dbPathEnvVar)
 	if dbPath == "" {
 		if *dbPathFlag != "" {
