@@ -563,6 +563,22 @@ func (c Client) updateAppointments(ctx context.Context, appointmentsToUpdate []m
 	return nil
 }
 
+// listExistingAppointmentsInLocations lists all existing appointments after the provided date for the given locations.
+func (c Client) listExistingAppointmentsInLocations(ctx context.Context, t time.Time, locations []Location) ([]models.Appointment, error) {
+	var locationStrings []string
+	for _, loc := range locations {
+		locationStrings = append(locationStrings, loc.String())
+	}
+	existingAppointments, err := c.db.ListAppointmentsAfterDateForLocations(ctx, models.ListAppointmentsAfterDateForLocationsParams{
+		Time:      t,
+		Locations: locationStrings,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list appointments after current time (%v) for locations %v: %w", t, locations, err)
+	}
+	return existingAppointments, nil
+}
+
 func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locations []Location, timeout time.Duration) error {
 	now := time.Now()
 
@@ -575,11 +591,11 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 		slog.Info("Pruned invalid appointments", "count", len(rows))
 	}
 
-	existingAppointments, err := c.db.ListAppointmentsAfterDate(ctx, now)
+	existingAppointments, err := c.listExistingAppointmentsInLocations(ctx, now, locations)
 	if err != nil {
-		return fmt.Errorf("failed to list appointments after current time (%v): %w", now, err)
+		return err
 	}
-	slog.Info("Listed existing appointments", "count", len(existingAppointments))
+	slog.Info("Listed existing appointments in provided locations", "count", len(existingAppointments))
 
 	appointments, err := c.RunForLocations(ctx, apptType, locations, timeout)
 	if err != nil {

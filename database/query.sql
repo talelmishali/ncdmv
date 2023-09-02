@@ -11,9 +11,9 @@ LIMIT 1;
 SELECT * FROM appointment
 ORDER BY time DESC;
 
--- name: ListAppointmentsAfterDate :many
+-- name: ListAppointmentsAfterDateForLocations :many
 SELECT * FROM appointment
-WHERE time >= ?
+WHERE time >= ? AND location IN (sqlc.slice('locations'))
 ORDER BY time DESC;
 
 -- name: CreateAppointment :one

@@ -8,6 +8,7 @@ package models
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -170,14 +171,30 @@ func (q *Queries) ListAppointments(ctx context.Context) ([]Appointment, error) {
 	return items, nil
 }
 
-const listAppointmentsAfterDate = `-- name: ListAppointmentsAfterDate :many
+const listAppointmentsAfterDateForLocations = `-- name: ListAppointmentsAfterDateForLocations :many
 SELECT id, location, time, available, create_timestamp FROM appointment
-WHERE time >= ?
+WHERE time >= ? AND location IN (/*SLICE:locations*/?)
 ORDER BY time DESC
 `
 
-func (q *Queries) ListAppointmentsAfterDate(ctx context.Context, argTime time.Time) ([]Appointment, error) {
-	rows, err := q.db.QueryContext(ctx, listAppointmentsAfterDate, argTime)
+type ListAppointmentsAfterDateForLocationsParams struct {
+	Time      time.Time `json:"time"`
+	Locations []string  `json:"locations"`
+}
+
+func (q *Queries) ListAppointmentsAfterDateForLocations(ctx context.Context, arg ListAppointmentsAfterDateForLocationsParams) ([]Appointment, error) {
+	query := listAppointmentsAfterDateForLocations
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.Time)
+	if len(arg.Locations) > 0 {
+		for _, v := range arg.Locations {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:locations*/?", strings.Repeat(",?", len(arg.Locations))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:locations*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}
