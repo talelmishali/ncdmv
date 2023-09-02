@@ -44,9 +44,9 @@ SELECT * FROM notification;
 
 -- name: CreateNotification :one
 INSERT INTO notification (
-  appointment_id, discord_webhook, available
+  appointment_id, discord_webhook, available, appt_type
 ) VALUES (
-  ?, ?, ?
+  ?, ?, ?, ?
 )
 RETURNING *;
 

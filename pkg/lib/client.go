@@ -429,7 +429,7 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 	return appointments, nil
 }
 
-func (c Client) sendNotifications(ctx context.Context, appointmentsToNotify []models.Appointment, discordWebhook string, interval time.Duration) error {
+func (c Client) sendNotifications(ctx context.Context, apptType AppointmentType, appointmentsToNotify []models.Appointment, discordWebhook string, interval time.Duration) error {
 	// Sort appointments by time.
 	slices.SortFunc(appointmentsToNotify, func(a, b models.Appointment) bool {
 		return a.Time.Before(b.Time)
@@ -494,6 +494,7 @@ func (c Client) sendNotifications(ctx context.Context, appointmentsToNotify []mo
 				AppointmentID:  appointment.ID,
 				DiscordWebhook: sql.NullString{String: discordWebhook, Valid: true},
 				Available:      appointment.Available,
+				ApptType:       apptType.String(),
 			}); err != nil {
 				return fmt.Errorf("failed to create notification for appointment %v: %w", appointment, err)
 			}
@@ -644,7 +645,7 @@ func (c Client) handleTick(ctx context.Context, apptType AppointmentType, locati
 		slog.Info("Updated appointments successfully", "count", len(appointmentsToUpdate))
 	}
 
-	if err := c.sendNotifications(ctx, appointmentsToNotify, c.discordWebhook, 1*time.Second); err != nil {
+	if err := c.sendNotifications(ctx, apptType, appointmentsToNotify, c.discordWebhook, 1*time.Second); err != nil {
 		return fmt.Errorf("failed to send notifications: %w", err)
 	}
 	if len(appointmentsToNotify) > 0 {

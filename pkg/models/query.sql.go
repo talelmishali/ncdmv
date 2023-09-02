@@ -42,21 +42,27 @@ func (q *Queries) CreateAppointment(ctx context.Context, arg CreateAppointmentPa
 
 const createNotification = `-- name: CreateNotification :one
 INSERT INTO notification (
-  appointment_id, discord_webhook, available
+  appointment_id, discord_webhook, available, appt_type
 ) VALUES (
-  ?, ?, ?
+  ?, ?, ?, ?
 )
-RETURNING id, appointment_id, discord_webhook, available, create_timestamp
+RETURNING id, appointment_id, discord_webhook, available, create_timestamp, appt_type
 `
 
 type CreateNotificationParams struct {
 	AppointmentID  int64          `json:"appointment_id"`
 	DiscordWebhook sql.NullString `json:"discord_webhook"`
 	Available      bool           `json:"available"`
+	ApptType       string         `json:"appt_type"`
 }
 
 func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error) {
-	row := q.db.QueryRowContext(ctx, createNotification, arg.AppointmentID, arg.DiscordWebhook, arg.Available)
+	row := q.db.QueryRowContext(ctx, createNotification,
+		arg.AppointmentID,
+		arg.DiscordWebhook,
+		arg.Available,
+		arg.ApptType,
+	)
 	var i Notification
 	err := row.Scan(
 		&i.ID,
@@ -64,6 +70,7 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 		&i.DiscordWebhook,
 		&i.Available,
 		&i.CreateTimestamp,
+		&i.ApptType,
 	)
 	return i, err
 }
@@ -223,7 +230,7 @@ func (q *Queries) ListAppointmentsAfterDateForLocations(ctx context.Context, arg
 }
 
 const listNotifications = `-- name: ListNotifications :many
-SELECT id, appointment_id, discord_webhook, available, create_timestamp FROM notification
+SELECT id, appointment_id, discord_webhook, available, create_timestamp, appt_type FROM notification
 `
 
 func (q *Queries) ListNotifications(ctx context.Context) ([]Notification, error) {
@@ -241,6 +248,7 @@ func (q *Queries) ListNotifications(ctx context.Context) ([]Notification, error)
 			&i.DiscordWebhook,
 			&i.Available,
 			&i.CreateTimestamp,
+			&i.ApptType,
 		); err != nil {
 			return nil, err
 		}

@@ -23,4 +23,5 @@ type Notification struct {
 	DiscordWebhook  sql.NullString `json:"discord_webhook"`
 	Available       bool           `json:"available"`
 	CreateTimestamp time.Time      `json:"create_timestamp"`
+	ApptType        string         `json:"appt_type"`
 }
