@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/google/uuid"
 	"golang.org/x/exp/slog"
 )
 
@@ -97,7 +96,6 @@ func (c *Client) startInternal() error {
 			if commands[cmd.Name] == nil {
 				continue
 			}
-			slog.Info("Command found", "cmd", cmd)
 			commands[cmd.Name].command = cmd
 			commands[cmd.Name].created = true
 			numExistingCommands++
@@ -140,17 +138,22 @@ func (c *Client) Start() (err error) {
 	}
 
 	c.session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		id := uuid.New()
-		name := i.ApplicationCommandData().Name
-		guildID := i.GuildID
+		ctx := NewCommandContext(ctx, s, i)
+		id := GetRequestID(ctx)
+		name := GetCommandName(ctx)
+		guildID := GetGuildID(ctx)
 
 		ctx, cancel := context.WithTimeout(ctx, c.commandTimeout)
 		defer cancel()
 
-		// Take a reader lock to safely access the commands map.
-		// TODO: How do we handle session close in the middle of a handler?
+		// Take a reader lock to safely access client state and the commands map.
 		c.lock.RLock()
 		defer c.lock.RUnlock()
+
+		if !c.started {
+			slog.Warn("Client has already been stopped; exiting...")
+			return
+		}
 
 		var cmd *commandInfo
 		if guildID != "" && c.commands[guildID] != nil && c.commands[guildID][name] != nil {
@@ -166,13 +169,13 @@ func (c *Client) Start() (err error) {
 					Content: fmt.Sprintf("Unknown command %q (id=%s)", name, id),
 				},
 			})
-			slog.Warn("Unknown command", "id", id, "guildID", guildID, "name", name)
+			slog.Warn("Unknown command", "name", name, "id", id, "guildID", guildID)
 			return
 		}
 
-		slog.Info("Handling command...", "id", id, "guildID", guildID, "name", name)
+		slog.Info("Handling command...", "name", name, "id", id, "guildID", guildID)
 		if err := cmd.handler(ctx, c, s, i); err != nil {
-			slog.Error("Command failed", "id", id, "guildID", guildID, "name", name, "err", err)
+			slog.Error("Command failed", "name", name, "id", id, "guildID", guildID, "err", err)
 			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
@@ -181,7 +184,7 @@ func (c *Client) Start() (err error) {
 			})
 			return
 		}
-		slog.Info("Completed command", "id", id, "guildID", guildID, "name", name)
+		slog.Info("Completed command", "name", name, "id", id, "guildID", guildID)
 	})
 
 	slog.Info("Registered session handler")
