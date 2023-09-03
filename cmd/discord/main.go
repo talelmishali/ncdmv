@@ -11,10 +11,12 @@ import (
 
 	"github.com/aksiksi/ncdmv/pkg/discord"
 	"github.com/bwmarrin/discordgo"
+	"golang.org/x/exp/slog"
 )
 
 var (
-	token = flag.String("token", "", "Discord bot token")
+	token   = flag.String("token", "", "Discord bot token")
+	guildID = flag.String("guild_id", "", "Guild ID to register commands in")
 )
 
 func main() {
@@ -34,7 +36,7 @@ func main() {
 		Description: "Basic command",
 	}
 
-	client.RegisterCommand(cmd, func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	client.RegisterCommand(cmd, *guildID, func(ctx context.Context, _ *discord.Client, s *discordgo.Session, i *discordgo.InteractionCreate) error {
 		var userID string
 		if i.Member != nil {
 			userID = i.Member.User.ID
@@ -47,6 +49,7 @@ func main() {
 				Content: "Hey there! Congratulations, you just executed your first slash command",
 			},
 		})
+		slog.Info("Responded to command")
 		channel, err := s.UserChannelCreate(userID)
 		if err != nil {
 			return fmt.Errorf("failed to create user channel: %v", err)
@@ -54,6 +57,7 @@ func main() {
 		if _, err := s.ChannelMessageSend(channel.ID, "Hello there!"); err != nil {
 			return fmt.Errorf("failed to send message over user channel: %v", err)
 		}
+		slog.Info("DMed user", "userID", userID, "guildID", i.GuildID)
 		return nil
 	})
 
