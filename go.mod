@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	github.com/PuerkitoBio/goquery v1.8.1
+	github.com/bwmarrin/discordgo v0.27.1
 	github.com/chromedp/cdproto v0.0.0-20230524011726-8501c74e8228
 	github.com/chromedp/chromedp v0.9.1
 	github.com/golang-migrate/migrate/v4 v4.16.1
@@ -19,6 +20,7 @@ require (
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.2.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
+	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
@@ -28,6 +30,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.17 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
+	golang.org/x/crypto v0.7.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.10.0 // indirect
 	golang.org/x/sys v0.8.0 // indirect

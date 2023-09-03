@@ -23,14 +23,4 @@ db-gen:
 		-v $(CURDIR):/src -w /src \
 		kjconroy/sqlc generate
 
-# Run all up migrations. Requires the NCDMV_DB_PATH env var to be set.
-# Example:
-# NCDMV_DB_PATH="./ncdmv.db" make db-migrate
-db-migrate:
-	go run ./cmd/migrate && mv database/ncdmv.db .
-
-db-clean:
-	rm -f ./ncdmv.db
-	rm -f ./database/ncdmv.db
-
-.PHONY: all clean db-clean db-gen db-migrate docker install server test
+.PHONY: all clean db-gen docker install server test
