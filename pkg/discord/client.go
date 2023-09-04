@@ -166,7 +166,7 @@ func (c *Client) Start() (err error) {
 			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
 				Data: &discordgo.InteractionResponseData{
-					Content: fmt.Sprintf("Unknown command %q (id=%s)", name, id),
+					Content: fmt.Sprintf("Unknown command: %q (id=%s)", name, id),
 				},
 			})
 			slog.Warn("Unknown command", "name", name, "id", id, "guildID", guildID)

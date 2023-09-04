@@ -13,8 +13,8 @@ import (
 	"golang.org/x/exp/slog"
 	_ "modernc.org/sqlite"
 
-	ncdmv "github.com/aksiksi/ncdmv/pkg/lib"
 	"github.com/aksiksi/ncdmv/pkg/models"
+	"github.com/aksiksi/ncdmv/pkg/ncdmv"
 )
 
 const (
