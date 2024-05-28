@@ -33,6 +33,7 @@ const (
 	AppointmentTypeIdCard                 AppointmentType = 5
 	AppointmentTypeKnowledgeTest          AppointmentType = 6
 	AppointmentTypeMotorcycleSkillsTest   AppointmentType = 8
+	AppointmentTypeNonCDLRoadTest         AppointmentType = 13
 	AppointmentTypePermit                 AppointmentType = 9
 )
 
@@ -52,6 +53,8 @@ func (a AppointmentType) String() string {
 		return "knowledge-test"
 	case AppointmentTypeMotorcycleSkillsTest:
 		return "motorcycle-skills-test"
+	case AppointmentTypeNonCDLRoadTest:
+		return "non-cdl-road-test"
 	case AppointmentTypePermit:
 		return "permit"
 	}
@@ -65,6 +68,7 @@ var appointmentTypeMap map[string]AppointmentType = map[string]AppointmentType{
 	AppointmentTypeIdCard.String():                 AppointmentTypeIdCard,
 	AppointmentTypeKnowledgeTest.String():          AppointmentTypeKnowledgeTest,
 	AppointmentTypeMotorcycleSkillsTest.String():   AppointmentTypeMotorcycleSkillsTest,
+	AppointmentTypeNonCDLRoadTest.String():         AppointmentTypeNonCDLRoadTest,
 	AppointmentTypePermit.String():                 AppointmentTypePermit,
 }
 
@@ -87,6 +91,7 @@ const (
 	LocationInvalid      Location = iota
 	LocationAhoskie      Location = 99
 	LocationCary         Location = 66
+	LocationClayton      Location = 42
 	LocationDurhamEast   Location = 47
 	LocationDurhamSouth  Location = 80
 	LocationFuquayVarina Location = 38
@@ -95,6 +100,7 @@ const (
 	LocationRaleighEast  Location = 181
 	LocationRaleighNorth Location = 10
 	LocationRaleighWest  Location = 9
+	LocationWendell      Location = 39
 )
 
 func (l Location) ToSelector() string {
@@ -107,6 +113,8 @@ func (l Location) String() string {
 		return "ahoskie"
 	case LocationCary:
 		return "cary"
+	case LocationClayton:
+		return "clayton"
 	case LocationDurhamEast:
 		return "durham-east"
 	case LocationDurhamSouth:
@@ -123,6 +131,8 @@ func (l Location) String() string {
 		return "raleigh-north"
 	case LocationRaleighWest:
 		return "raleigh-west"
+	case LocationWendell:
+		return "wendell"
 	}
 	panic("unreachable: invalid Location")
 }
@@ -130,6 +140,7 @@ func (l Location) String() string {
 var locationMap map[string]Location = map[string]Location{
 	LocationAhoskie.String():      LocationAhoskie,
 	LocationCary.String():         LocationCary,
+	LocationClayton.String():      LocationClayton,
 	LocationDurhamEast.String():   LocationDurhamEast,
 	LocationDurhamSouth.String():  LocationDurhamSouth,
 	LocationFuquayVarina.String(): LocationFuquayVarina,
@@ -138,6 +149,7 @@ var locationMap map[string]Location = map[string]Location{
 	LocationRaleighEast.String():  LocationRaleighEast,
 	LocationRaleighNorth.String(): LocationRaleighNorth,
 	LocationRaleighWest.String():  LocationRaleighWest,
+	LocationWendell.String():      LocationWendell,
 }
 
 func StringToLocation(k string) Location {
