@@ -23,7 +23,7 @@ const (
 
 var (
 	apptType          = flag.String("appt_type", "permit", fmt.Sprintf("appointment type (options: %s)", strings.Join(ncdmv.ValidApptTypes(), ",")))
-	databasePath      = flag.String("database_path", "./ncdmv.db", "path to database file")
+	databasePath      = flag.String("database_path", "./database/ncdmv.db", "path to database file")
 	migrationsPath    = flag.String("migrations_path", "", "path to migrations directory")
 	locations         = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to check (options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
 	discordWebhook    = flag.String("discord_webhook", "", "Discord webhook URL for notifications (optional)")
