@@ -90,6 +90,7 @@ const (
 	// Values taken from the "data-id" attribute set on each location div.
 	LocationInvalid      Location = iota
 	LocationAhoskie      Location = 99
+	LocationCarrboro     Location = 140
 	LocationCary         Location = 66
 	LocationClayton      Location = 42
 	LocationDurhamEast   Location = 47
@@ -111,6 +112,8 @@ func (l Location) String() string {
 	switch l {
 	case LocationAhoskie:
 		return "ahoskie"
+	case LocationCarrboro:
+		return "carrboro"
 	case LocationCary:
 		return "cary"
 	case LocationClayton:
@@ -139,6 +142,7 @@ func (l Location) String() string {
 
 var locationMap map[string]Location = map[string]Location{
 	LocationAhoskie.String():      LocationAhoskie,
+	LocationCarrboro.String():     LocationCarrboro,
 	LocationCary.String():         LocationCary,
 	LocationClayton.String():      LocationClayton,
 	LocationDurhamEast.String():   LocationDurhamEast,
