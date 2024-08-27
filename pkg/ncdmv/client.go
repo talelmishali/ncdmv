@@ -431,8 +431,13 @@ func (c Client) RunForLocations(ctx context.Context, apptType AppointmentType, l
 
 func (c Client) sendNotifications(ctx context.Context, apptType AppointmentType, appointmentsToNotify []models.Appointment, discordWebhook string, interval time.Duration) error {
 	// Sort appointments by time.
-	slices.SortFunc(appointmentsToNotify, func(a, b models.Appointment) bool {
-		return a.Time.Before(b.Time)
+	slices.SortFunc(appointmentsToNotify, func(a, b models.Appointment) int {
+		if a.Time.Before(b.Time) {
+			return -1
+		} else if a.Time.After(b.Time) {
+			return 1
+		}
+		return 0
 	})
 
 	// Group appointments by location.
