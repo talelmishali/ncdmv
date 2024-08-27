@@ -46,7 +46,13 @@
             in pkgs.dockerTools.buildImage {
           name = "ghcr.io/aksiksi/ncdmv";
           tag = "latest";
-          config.Entrypoint = [ "${pkg}/bin/ncdmv" ];
+          config = {
+            Entrypoint = [ "${pkg}/bin/ncdmv" ];
+            Volumes = {
+              # Required by Chromium?
+              "/tmp" = null;
+            };
+          };
         };
       }
     );
