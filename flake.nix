@@ -41,6 +41,13 @@
                 --prefix PATH : "${wrapperPath}"
           '';
         };
+        docker = let
+          packagePath = self.outputs.packages.${system}.default;
+            in pkgs.dockerTools.buildLayeredImage {
+          name = "ghcr.io/aksiksi/ncdmv";
+          tag = "latest";
+          config.Cmd = [ "${packagePath}/bin/server" ];
+        };
       }
     );
 
