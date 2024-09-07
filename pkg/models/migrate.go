@@ -2,14 +2,13 @@ package models
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/file"
-	"golang.org/x/exp/slog"
 )
 
 // RunMigrations runs all migrations in the given path against the provided SQLite DB.
@@ -62,12 +61,7 @@ func RunMigrations(dbPath, migrationsPath string, count int, down bool) error {
 		}
 		return nil
 	}
-	if err := f(); err != nil {
-		// https://github.com/golang-migrate/migrate/issues/486#issue-767488523
-		if strings.Contains(err.Error(), "no change") {
-			slog.Info("DB schema is up-to-date")
-			return nil
-		}
+	if err := f(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
 	}
 
