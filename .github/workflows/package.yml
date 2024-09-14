@@ -6,9 +6,6 @@ on:
       - '**/*.md'
     branches:
       - main
-  pull_request:
-    paths-ignore:
-      - '**/*.md'
 
 env:
   REGISTRY: ghcr.io
