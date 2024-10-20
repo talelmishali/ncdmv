@@ -19,4 +19,3 @@ jobs:
       with:
         sqlc-version: '1.27.0'
     - run: sqlc diff
-
