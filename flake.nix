@@ -16,6 +16,7 @@
     packages = forAllSystems (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        selfPackages = self.outputs.packages.${system};
       in {
         default = pkgs.buildGoModule {
           inherit pname;
@@ -26,23 +27,34 @@
             pkgs.sqlite
           ];
         };
-        docker = pkgs.dockerTools.streamLayeredImage {
-          name = "ghcr.io/aksiksi/ncdmv";
-          tag = "latest";
-          # Use commit date to ensure image creation date is reproducible.
-          created = builtins.substring 0 8 self.lastModifiedDate;
+        # Base image for Chromium to ensure that ncdmv gets its own layer in
+        # the final image.
+        #
+        # If we put everything in one image, Nix will include Chromium and
+        # ncdmv in the same (final) layer.
+        chromium = pkgs.dockerTools.buildLayeredImage {
+          name = "chromium-base";
           contents = [
             # Required for Discord webhook over HTTPS.
             pkgs.cacert
             pkgs.chromium
-            self.outputs.packages.${system}.default
           ];
           extraCommands = ''
-            # Required by Chromium
+            # Required for Chromium to run
             mkdir tmp
           '';
+          # Default is 100, so this ensures the final image gets its own
+          # layer(s) after being merged with this base image.
+          maxLayers = 90;
+        };
+        docker = pkgs.dockerTools.streamLayeredImage {
+          name = "ghcr.io/aksiksi/ncdmv";
+          tag = "latest";
+          fromImage = selfPackages.chromium;
+          # Use commit date to ensure image creation date is reproducible.
+          created = builtins.substring 0 8 self.lastModifiedDate;
           config = {
-            Entrypoint = [ "ncdmv" ];
+            Entrypoint = [ "${selfPackages.default}/bin/ncdmv" ];
             Volumes = {
               # DB storage
               "/config" = null;
