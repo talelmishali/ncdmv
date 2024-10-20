@@ -22,7 +22,7 @@
           inherit pname;
           inherit version;
           src = ./.;
-          vendorHash = "sha256-U0HNh5MrR1ZftfUC2Z7jPc7Me6OM/mj2bGvySLrBUus=";
+          vendorHash = "sha256-mW+0FAVnBP5ISpQgBcAIUmvayMeu0dLfo6tcpHYoMfs=";
           buildInputs = [
             pkgs.sqlite
           ];

@@ -1,5 +1,3 @@
-SHELL := /bin/bash
-
 all: db-gen server test
 
 server:
@@ -13,6 +11,9 @@ install:
 
 clean:
 	rm -f ./ncdmv
+
+shell:
+	nix develop
 
 docker:
 	nix build .#docker

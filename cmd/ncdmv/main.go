@@ -24,7 +24,6 @@ const (
 var (
 	apptType          = flag.String("appt_type", "permit", fmt.Sprintf("appointment type (options: %s)", strings.Join(ncdmv.ValidApptTypes(), ",")))
 	databasePath      = flag.String("database_path", "./database/ncdmv.db", "path to database file")
-	migrationsPath    = flag.String("migrations_path", "", "path to migrations directory")
 	locations         = flag.String("locations", "cary,durham-east,durham-south", fmt.Sprintf("comma-seperated list of locations to check (options: %s)", strings.Join(ncdmv.ValidLocations(), ",")))
 	discordWebhook    = flag.String("discord_webhook", "", "Discord webhook URL for notifications (optional)")
 	timeout           = flag.Int("timeout", 120, "timeout, in seconds")
@@ -77,11 +76,9 @@ func main() {
 	}
 	slog.Info("Enabled foreign key support")
 
-	if *migrationsPath != "" {
-		slog.Info("Running all up migrations...", "databasePath", *databasePath, "migrationsPath", *migrationsPath)
-		if err := models.RunMigrations(*databasePath, *migrationsPath, 0 /* count */, false /* down */); err != nil {
-			log.Fatalf("Failed to run migrations: %v", err)
-		}
+	slog.Info("Running all up migrations...", "databasePath", *databasePath)
+	if err := models.RunMigrations(*databasePath, 0 /* count */, false /* down */); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	// Initialize the Chrome context and open a new window.

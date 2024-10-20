@@ -2,20 +2,24 @@ package models
 
 import (
 	"database/sql"
+	"embed"
 	"errors"
 	"fmt"
 	"log"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
-	"github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
+
+//go:embed testdata/migrations/*.sql
+var migrations embed.FS
 
 // RunMigrations runs all migrations in the given path against the provided SQLite DB.
 //
 // If count is set to 0, all migrations will be run. If down is set to true, down
 // migrations will be run.
-func RunMigrations(dbPath, migrationsPath string, count int, down bool) error {
+func RunMigrations(dbPath string, count int, down bool) error {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open DB %q: %w", dbPath, err)
@@ -27,12 +31,12 @@ func RunMigrations(dbPath, migrationsPath string, count int, down bool) error {
 		return fmt.Errorf("invalid SQLite DB file: %w", err)
 	}
 
-	fileSource, err := (&file.File{}).Open(migrationsPath)
+	d, err := iofs.New(migrations, "testdata/migrations")
 	if err != nil {
-		return fmt.Errorf("failed to open migrations path %q: %w", migrationsPath, err)
+		return fmt.Errorf("failed to open migrations: %w", err)
 	}
 
-	m, err := migrate.NewWithInstance("file", fileSource, "sqlite", instance)
+	m, err := migrate.NewWithInstance("iofs", d, "sqlite", instance)
 	if err != nil {
 		log.Fatal(err)
 	}

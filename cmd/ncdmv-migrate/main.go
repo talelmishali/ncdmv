@@ -13,10 +13,9 @@ const (
 )
 
 var (
-	down           = flag.Bool("down", false, "up or down")
-	count          = flag.Int("count", 0, "number of migrations")
-	dbPathFlag     = flag.String("db_path", "./database/ncdmv.db", "path to SQLite DB file")
-	migrationsPath = flag.String("migrations_path", "./database/migrations", "path to migrations directory")
+	down       = flag.Bool("down", false, "up or down")
+	count      = flag.Int("count", 0, "number of migrations")
+	dbPathFlag = flag.String("db_path", "./database/ncdmv.db", "path to SQLite DB file")
 )
 
 func main() {
@@ -29,7 +28,7 @@ func main() {
 			log.Fatalf("No DB path specified")
 		}
 	}
-	if err := models.RunMigrations(dbPath, *migrationsPath, *count, *down); err != nil {
+	if err := models.RunMigrations(dbPath, *count, *down); err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
 }
