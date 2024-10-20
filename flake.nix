@@ -16,7 +16,6 @@
     packages = forAllSystems (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        lib = nixpkgs.lib;
       in {
         default = pkgs.buildGoModule {
           inherit pname;
@@ -26,32 +25,26 @@
           buildInputs = [
             pkgs.sqlite
           ];
-
-          # We want Chrome to be available in $PATH when executing the server.
-          # The way to do this is to wrap the binary into a thin shell script
-          # that adds the chromium Nix store path to $PATH before executing
-          # the binary.
-          #
-          # See: https://discourse.nixos.org/t/buildinputs-not-propagating-to-the-derivation/4975/2
-          nativeBuildInputs = [ pkgs.makeWrapper ];
-          wrapperPath = lib.makeBinPath ([ pkgs.chromium ]);
-          postFixup = let
-            wrapperPath = self.outputs.packages.${system}.default.wrapperPath; in ''
-            wrapProgram $out/bin/ncdmv \
-                --prefix PATH : "${wrapperPath}"
-          '';
         };
-        docker = let
-          pkg = self.outputs.packages.${system}.default;
-            in pkgs.dockerTools.buildLayeredImage {
+        docker = pkgs.dockerTools.streamLayeredImage {
           name = "ghcr.io/aksiksi/ncdmv";
           tag = "latest";
+          # Use commit date to ensure image creation date is reproducible.
+          created = builtins.substring 0 8 self.lastModifiedDate;
+          contents = [
+            # Required for Discord webhook over HTTPS.
+            pkgs.cacert
+            pkgs.chromium
+            self.outputs.packages.${system}.default
+          ];
+          extraCommands = ''
+            # Required by Chromium
+            mkdir tmp
+          '';
           config = {
-            Entrypoint = [ "${pkg}/bin/ncdmv" ];
+            Entrypoint = [ "ncdmv" ];
             Volumes = {
-              # Required by Chromium?
-              "/tmp" = null;
-              # Config and DB
+              # DB storage
               "/config" = null;
             };
           };
