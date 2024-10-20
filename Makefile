@@ -15,7 +15,7 @@ clean:
 	rm -f ./ncdmv
 
 docker:
-	docker build . -t ncdmv
+	nix build .#docker
 
 # Re-generate SQL models from the schema.
 db-gen:

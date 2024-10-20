@@ -51,6 +51,8 @@
             Volumes = {
               # Required by Chromium?
               "/tmp" = null;
+              # Config and DB
+              "/config" = null;
             };
           };
         };

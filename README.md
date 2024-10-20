@@ -49,10 +49,12 @@ Show the browser with a timeout of 2 minutes each check (across all locations) a
 go run ./cmd/ncdmv -headless=false -locations=cary,durham-east,durham-south -discord_webhook=[WEBHOOK] -timeout=120 -interval=10
 ```
 
+### Docker
+
 Run on Docker:
 
 ```
-docker run --rm ghcr.io/aksiksi/ncdmv:latest -h
+docker run --rm -v $(pwd):/config ghcr.io/aksiksi/ncdmv:latest -database_path=/config/ncdmv.db
 ```
 
 ### If you are new to Go
