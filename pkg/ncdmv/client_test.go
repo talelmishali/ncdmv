@@ -27,7 +27,7 @@ func TestSmoke(t *testing.T) {
 
 	ctx := context.Background()
 
-	client, err := NewClientFromOptions(ctx, ClientOptions{
+	client, cleanup, err := NewClientFromOptions(ctx, ClientOptions{
 		DatabasePath:  getDBPath(t),
 		StopOnFailure: true,
 		Headless:      true,
@@ -37,6 +37,7 @@ func TestSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer cleanup()
 
 	if _, err := client.RunForLocations(ctx, AppointmentTypeDriverLicense, []Location{LocationCary}, 3*time.Minute); err != nil {
 		t.Error(err)
