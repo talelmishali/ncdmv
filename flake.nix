@@ -6,8 +6,12 @@
   };
 
   outputs = { self, nixpkgs, ... }: let
-    # No chromium on darwin: https://github.com/NixOS/nixpkgs/issues/247855
-    supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
+    supportedSystems = [
+      "x86_64-linux"
+      "aarch64-linux"
+      "x86_64-darwin"
+      "aarch64-linux"
+    ];
     forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     pname = "ncdmv";
     owner = "aksiksi";
@@ -17,7 +21,6 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         selfPackages = self.outputs.packages.${system};
-        # Container entrypoint
         entrypoint = pkgs.writeScript "docker-entrypoint.sh" ''
           #!${pkgs.stdenv.shell}
           exec ${selfPackages.default}/bin/ncdmv \
@@ -42,29 +45,28 @@
             pkgs.sqlite
           ];
         };
-        # Base image for Chromium to ensure that ncdmv gets its own layer in
-        # the final image.
-        #
-        # If we put everything in one image, Nix will include Chromium and
-        # ncdmv in the same (final) layer.
-        chromium = pkgs.dockerTools.buildLayeredImage {
-          name = "chromium-base";
-          contents = [
-            # Required for Discord webhook over HTTPS.
-            pkgs.cacert
-            pkgs.chromium
-          ];
-          extraCommands = ''
-            # Required for Chromium to run
-            mkdir tmp
-          '';
+        # https://hub.docker.com/r/chromedp/headless-shell
+        chrome-headless = pkgs.dockerTools.pullImage {
+          imageName = "docker.io/chromedp/headless-shell";
+          imageDigest = "sha256:bbe8b1153719af55adcc5d197e490ed7cb146468f09ce939cd53b7dd280c951b";
+          finalImageTag = "latest";
+          sha256 = "sha256-mS3kdcGc4v3KPLfN3WCvTP39lALhSCVhfaWLQLgtoNE=";
+          os = "linux";
+          arch =
+            if pkgs.lib.strings.hasPrefix "x86_64" system
+            then "amd64"
+            else "arm64/v8";
         };
         docker = pkgs.dockerTools.streamLayeredImage {
           name = "ghcr.io/aksiksi/ncdmv";
           tag = "latest";
-          fromImage = selfPackages.chromium;
+          fromImage = selfPackages.chrome-headless;
           # Use commit date to ensure image creation date is reproducible.
           created = builtins.substring 0 8 self.lastModifiedDate;
+          architecture =
+            if pkgs.lib.strings.hasPrefix "x86_64" system
+            then "amd64"
+            else "arm64";
           config = {
             Entrypoint = [ entrypoint ];
             Volumes = {
@@ -99,7 +101,6 @@
       in {
         default = pkgs.mkShell {
           buildInputs = [
-            pkgs.chromium
             pkgs.sqlite
           ];
           packages = [
