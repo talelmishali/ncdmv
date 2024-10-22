@@ -35,6 +35,10 @@
             --debug=$NCDMV_DEBUG \
             --debug-chrome=$NCDMV_DEBUG_CHROME
         '';
+        imageArch =
+          if pkgs.lib.strings.hasPrefix "x86_64" system
+          then "amd64"
+          else "arm64";
       in {
         default = pkgs.buildGoModule {
           inherit pname;
@@ -52,10 +56,7 @@
           finalImageTag = "latest";
           sha256 = "sha256-mS3kdcGc4v3KPLfN3WCvTP39lALhSCVhfaWLQLgtoNE=";
           os = "linux";
-          arch =
-            if pkgs.lib.strings.hasPrefix "x86_64" system
-            then "amd64"
-            else "arm64/v8";
+          arch = imageArch;
         };
         docker = pkgs.dockerTools.streamLayeredImage {
           name = "ghcr.io/aksiksi/ncdmv";
@@ -63,10 +64,7 @@
           fromImage = selfPackages.chrome-headless;
           # Use commit date to ensure image creation date is reproducible.
           created = builtins.substring 0 8 self.lastModifiedDate;
-          architecture =
-            if pkgs.lib.strings.hasPrefix "x86_64" system
-            then "amd64"
-            else "arm64";
+          architecture = imageArch;
           config = {
             Entrypoint = [ entrypoint ];
             Volumes = {
