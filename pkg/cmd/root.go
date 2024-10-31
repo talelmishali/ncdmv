@@ -33,7 +33,7 @@ func parseFlags(cmd *cobra.Command) *Args {
 	args := Args{}
 	cmd.Flags().StringVarP(&args.ApptType, "appt-type", "t", "permit", fmt.Sprintf("appointment type (one of: %s)", ncdmv.ValidApptTypes()))
 	cmd.Flags().StringVarP(&args.DatabasePath, "database-path", "d", "", "database path")
-	cmd.Flags().StringSliceVarP(&args.Locations, "locations", "l", []string{"cary", "durham-east", "durham-south"}, "locations to search")
+	cmd.Flags().StringSliceVarP(&args.Locations, "locations", "l", nil, "locations to search")
 	cmd.Flags().StringVarP(&args.DiscordWebhook, "discord-webhook", "w", "", "Discord webhook URL")
 	cmd.Flags().DurationVar(&args.Timeout, "timeout", 5*time.Minute, "timeout for each search, in seconds")
 	cmd.Flags().DurationVar(&args.Interval, "interval", 5*time.Minute, "interval between searches")
@@ -44,7 +44,6 @@ func parseFlags(cmd *cobra.Command) *Args {
 	cmd.Flags().BoolVar(&args.Debug, "debug", false, "enable debug mode")
 	cmd.Flags().BoolVar(&args.DebugChrome, "debug-chrome", false, "enable debug mode for Chrome")
 
-	cmd.MarkFlagRequired("appt-type")
 	cmd.MarkFlagRequired("database-path")
 	cmd.MarkFlagRequired("locations")
 
