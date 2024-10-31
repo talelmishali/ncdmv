@@ -35,6 +35,23 @@
             --debug=$NCDMV_DEBUG \
             --debug-chrome=$NCDMV_DEBUG_CHROME
         '';
+        # https://hub.docker.com/r/chromedp/headless-shell
+        chrome-headless-amd64 = pkgs.dockerTools.pullImage {
+          imageName = "docker.io/chromedp/headless-shell";
+          imageDigest = "sha256:e79572ba4c81533484f97ce9dc4253a51aa5f6b13593f5c3408af005cf7526fa";
+          finalImageTag = "latest";
+          sha256 = "sha256-Aqq6Mjod1OJUKswdNh2M+85O/XMhRCNWmyn7dm3oO7U=";
+          os = "linux";
+          arch = "amd64";
+        };
+        chrome-headless-arm64 = pkgs.dockerTools.pullImage {
+          imageName = "docker.io/chromedp/headless-shell";
+          imageDigest = "sha256:0848400a41ce64e77f240854c212b32a1f50d65f098413181a62cba03889d556";
+          finalImageTag = "latest";
+          sha256 = "sha256-IpLyO2g8Vkr2gdANQw5ZwCzC9FhWAFGZ6adXQEXEIsA=";
+          os = "linux";
+          arch = "arm64";
+        };
         imageArch =
           if pkgs.lib.strings.hasPrefix "x86_64" system
           then "amd64"
@@ -49,19 +66,13 @@
             pkgs.sqlite
           ];
         };
-        # https://hub.docker.com/r/chromedp/headless-shell
-        chrome-headless = pkgs.dockerTools.pullImage {
-          imageName = "docker.io/chromedp/headless-shell";
-          imageDigest = "sha256:bbe8b1153719af55adcc5d197e490ed7cb146468f09ce939cd53b7dd280c951b";
-          finalImageTag = "latest";
-          sha256 = "sha256-mS3kdcGc4v3KPLfN3WCvTP39lALhSCVhfaWLQLgtoNE=";
-          os = "linux";
-          arch = imageArch;
-        };
         docker = pkgs.dockerTools.streamLayeredImage {
           name = "ghcr.io/aksiksi/ncdmv";
           tag = "latest";
-          fromImage = selfPackages.chrome-headless;
+          fromImage =
+            if imageArch == "amd64"
+            then chrome-headless-amd64
+            else chrome-headless-arm64;
           # Use commit date to ensure image creation date is reproducible.
           created = builtins.substring 0 8 self.lastModifiedDate;
           architecture = imageArch;
