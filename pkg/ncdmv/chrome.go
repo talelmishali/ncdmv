@@ -10,6 +10,7 @@ import (
 
 func NewChromeContext(ctx context.Context, headless, disableGpu, debug bool) (context.Context, context.CancelFunc, error) {
 	allocatorOpts := chromedp.DefaultExecAllocatorOptions[:]
+	allocatorOpts = append(allocatorOpts, chromedp.Flag("no-sandbox", true))
 	var ctxOpts []chromedp.ContextOption
 	if !headless {
 		allocatorOpts = append(allocatorOpts, chromedp.Flag("headless", false))
