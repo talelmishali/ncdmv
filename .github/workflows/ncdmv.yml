@@ -21,12 +21,13 @@ jobs:
         run: go mod download
 
       - name: Run ncdmv Monitor
+        env:
+          ROD_ARGS: --no-sandbox
         run: |
           go run ./cmd/ncdmv \
-            --appt-type permit \
+            --appt-type driver-license-renewal \
             --locations cary,durham-east,durham-south \
             --interval 5m \
             --headless \
             --database-path ./ncdmv.db \
-            --discord-webhook "${{ secrets.DISCORD_WEBHOOK }}" \
-            --chrome-args="--no-sandbox"
+            --discord-webhook "${{ secrets.DISCORD_WEBHOOK }}"
