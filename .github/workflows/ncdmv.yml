@@ -28,4 +28,5 @@ jobs:
             --interval 5m \
             --headless \
             --database-path ./ncdmv.db \
-            --discord-webhook "${{ secrets.DISCORD_WEBHOOK }}"
+            --discord-webhook "${{ secrets.DISCORD_WEBHOOK }}" \
+            --chrome-args="--no-sandbox"
