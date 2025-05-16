@@ -27,4 +27,5 @@ jobs:
             --locations cary,durham-east,durham-south \
             --interval 5m \
             --headless \
+            --database-path ./ncdmv.db \
             --discord-webhook "${{ secrets.DISCORD_WEBHOOK }}"
